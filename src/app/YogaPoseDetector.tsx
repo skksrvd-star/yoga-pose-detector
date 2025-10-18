@@ -23,6 +23,7 @@ const YogaPoseDetector: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const imageDivRef = useRef<HTMLDivElement>(null);
   const lastKeypointsRef = useRef<Keypoint[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -34,9 +35,32 @@ const YogaPoseDetector: React.FC = () => {
   const [error, setError] = useState('');
   const [detector, setDetector] = useState<PoseDetector | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [poseCount, setPoseCount] = useState(0);
+  const [lastDetectedPose, setLastDetectedPose] = useState('');
   const [zoom, setZoom] = useState(1);
 
-  // Load model on mount
+  // Play success sound
+  const playSuccessSound = () => {
+    if (!soundEnabled) return;
+
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.frequency.value = 800;
+    oscillator.type = 'sine';
+
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.5);
+  };
+
   useEffect(() => {
     const loadModel = async () => {
       try {
@@ -49,7 +73,6 @@ const YogaPoseDetector: React.FC = () => {
         await tf.ready();
         await tf.setBackend('webgl');
 
-        // Use MoveNet instead - more reliable than BlazePose
         const detectorConfig = {
           modelType: poseDetectionModule.movenet.modelType.SINGLEPOSE_LIGHTNING
         };
@@ -59,7 +82,6 @@ const YogaPoseDetector: React.FC = () => {
           detectorConfig
         );
 
-        console.log('MoveNet model loaded successfully');
         setDetector(poseDetector);
         setIsModelLoaded(true);
         setError('');
@@ -73,6 +95,27 @@ const YogaPoseDetector: React.FC = () => {
 
     loadModel();
   }, []);
+
+  // Update image when pose changes
+  useEffect(() => {
+    if (!imageDivRef.current) return;
+
+    const isUnknown = currentPose === 'Unknown Pose' || currentPose === 'Standing Position' ||
+                     currentPose === 'No pose detected' || currentPose === 'Unknown';
+
+    const imageSrc = isUnknown
+      ? '/poses/unknown-pose.jpg'
+      : `/poses/${currentPose.toLowerCase().split('(')[0].trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.jpg`;
+
+    imageDivRef.current.innerHTML = `
+      <img
+        src="${imageSrc}"
+        alt="${currentPose}"
+        class="w-full h-full object-cover"
+        onerror="this.style.display='none';"
+      />
+    `;
+  }, [currentPose]);
 
   const startCamera = async (requestedFacingMode?: 'user' | 'environment') => {
     try {
@@ -88,14 +131,6 @@ const YogaPoseDetector: React.FC = () => {
           facingMode: mode
         }
       };
-
-      // Try to apply zoom if supported (mainly for mobile)
-      if ('mediaDevices' in navigator && 'getSupportedConstraints' in navigator.mediaDevices) {
-        const supportedConstraints = navigator.mediaDevices.getSupportedConstraints() as any;
-        if (supportedConstraints.zoom && constraints.video && typeof constraints.video === 'object') {
-          (constraints.video as any).zoom = zoom;
-        }
-      }
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
@@ -124,46 +159,30 @@ const YogaPoseDetector: React.FC = () => {
   const switchCamera = async () => {
     if (!isCameraOn) return;
 
-    // Stop current camera
     if (videoRef.current?.srcObject) {
       const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
       tracks.forEach(track => track.stop());
     }
 
-    // Start with opposite facing mode
     const newMode = facingMode === 'user' ? 'environment' : 'user';
     await startCamera(newMode);
   };
 
   const handleZoomIn = async () => {
     const newZoom = Math.min(zoom + 0.1, 2);
-    console.log('Zoom in:', zoom, '->', newZoom);
     setZoom(newZoom);
-
-    // Restart camera with new zoom if supported
-    if (isCameraOn) {
-      await applyZoomToCamera(newZoom);
-    }
+    if (isCameraOn) await applyZoomToCamera(newZoom);
   };
 
   const handleZoomOut = async () => {
     const newZoom = Math.max(zoom - 0.1, 0.5);
-    console.log('Zoom out:', zoom, '->', newZoom);
     setZoom(newZoom);
-
-    // Restart camera with new zoom if supported
-    if (isCameraOn) {
-      await applyZoomToCamera(newZoom);
-    }
+    if (isCameraOn) await applyZoomToCamera(newZoom);
   };
 
   const resetZoom = async () => {
-    console.log('Reset zoom to 1.0');
     setZoom(1);
-
-    if (isCameraOn) {
-      await applyZoomToCamera(1);
-    }
+    if (isCameraOn) await applyZoomToCamera(1);
   };
 
   const applyZoomToCamera = async (zoomLevel: number) => {
@@ -176,16 +195,9 @@ const YogaPoseDetector: React.FC = () => {
 
     try {
       const capabilities = videoTrack.getCapabilities() as any;
-      console.log('Camera capabilities:', capabilities);
-
       if (capabilities && 'zoom' in capabilities) {
-        const constraints = {
-          advanced: [{ zoom: zoomLevel } as any]
-        };
+        const constraints = { advanced: [{ zoom: zoomLevel } as any] };
         await videoTrack.applyConstraints(constraints);
-        console.log('Hardware zoom applied:', zoomLevel);
-      } else {
-        console.log('Hardware zoom not supported, using CSS zoom');
       }
     } catch (err) {
       console.log('Could not apply zoom constraint:', err);
@@ -202,14 +214,12 @@ const YogaPoseDetector: React.FC = () => {
     setCurrentPose('Unknown');
     setConfidence(0);
     lastKeypointsRef.current = [];
+    setLastDetectedPose('');
 
-    // Clear the canvas
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      }
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
   };
 
@@ -223,12 +233,17 @@ const YogaPoseDetector: React.FC = () => {
   const classifyPose = (keypoints: Keypoint[]): PoseClassification => {
     if (!keypoints || keypoints.length < 17) return { pose: 'Unknown', confidence: 0 };
 
-    // MoveNet uses COCO format with 17 keypoints
+    // Filter out low-confidence keypoints
+    const filteredKeypoints = keypoints.map(kp => ({
+      ...kp,
+      score: kp.score || 0
+    }));
+
+    // Check overall confidence - if too many keypoints are low confidence, return unknown
+    const avgConfidence = filteredKeypoints.reduce((sum, kp) => sum + kp.score, 0) / filteredKeypoints.length;
+    if (avgConfidence < 0.4) return { pose: 'Unknown', confidence: 0 };
+
     const nose = keypoints[0];
-    const leftEye = keypoints[1];
-    const rightEye = keypoints[2];
-    const leftEar = keypoints[3];
-    const rightEar = keypoints[4];
     const leftShoulder = keypoints[5];
     const rightShoulder = keypoints[6];
     const leftElbow = keypoints[7];
@@ -242,157 +257,180 @@ const YogaPoseDetector: React.FC = () => {
     const leftAnkle = keypoints[15];
     const rightAnkle = keypoints[16];
 
+    // Helper to check if keypoints are visible enough
+    const isVisible = (kp: Keypoint, threshold = 0.3) => (kp.score || 0) > threshold;
+    const countVisible = (kps: Keypoint[], threshold = 0.3) => kps.filter(kp => isVisible(kp, threshold)).length;
+
     const leftArmAngle = calculateAngle(leftShoulder, leftElbow, leftWrist);
     const rightArmAngle = calculateAngle(rightShoulder, rightElbow, rightWrist);
     const leftLegAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
     const rightLegAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
-    const leftShoulderAngle = calculateAngle(leftElbow, leftShoulder, leftHip);
-    const rightShoulderAngle = calculateAngle(rightElbow, rightShoulder, rightHip);
     const leftHipAngle = calculateAngle(leftShoulder, leftHip, leftKnee);
     const rightHipAngle = calculateAngle(rightShoulder, rightHip, rightKnee);
 
-    const avgConfidence = keypoints.reduce((sum, kp) => sum + (kp.score || 0), 0) / keypoints.length;
-
-    // Calculate body orientation
     const hipCenterY = (leftHip.y + rightHip.y) / 2;
     const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
-    const torsoVertical = Math.abs(shoulderCenterY - hipCenterY);
+    const hipCenterX = (leftHip.x + rightHip.x) / 2;
+    const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
 
-    // Tree Pose - one leg bent, other straight, arms up or at chest
-    if ((leftLegAngle > 160 && rightKnee.y < rightHip.y - 30) ||
-        (rightLegAngle > 160 && leftKnee.y < leftHip.y - 30)) {
-      if (leftWrist.y < leftShoulder.y && rightWrist.y < rightShoulder.y) {
-        return { pose: 'Tree Pose - Arms Up (Vrksasana)', confidence: avgConfidence };
-      }
-      return { pose: 'Tree Pose (Vrksasana)', confidence: avgConfidence };
-    }
+    // Calculate torso vertical distance
+    const torsoVerticalDistance = Math.abs(shoulderCenterY - hipCenterY);
 
-    // Warrior I - lunge position with arms raised
-    if ((leftLegAngle < 130 && rightLegAngle > 150) || (rightLegAngle < 130 && leftLegAngle > 150)) {
-      if (leftWrist.y < leftShoulder.y - 50 && rightWrist.y < rightShoulder.y - 50) {
-        return { pose: 'Warrior I (Virabhadrasana I)', confidence: avgConfidence };
-      }
-    }
+    // Tree Pose - one leg lifted, other straight
+    if (countVisible([leftKnee, rightKnee, leftHip, rightHip]) >= 4) {
+      const leftLegLifted = leftKnee.y < leftHip.y - 50 && leftLegAngle > 150;
+      const rightLegLifted = rightKnee.y < rightHip.y - 50 && rightLegAngle > 150;
 
-    // Warrior II - lunge with arms extended horizontally
-    if ((leftLegAngle < 130 && rightLegAngle > 150) || (rightLegAngle < 130 && leftLegAngle > 150)) {
-      const armsHorizontal = Math.abs(leftWrist.y - leftShoulder.y) < 50 &&
-                             Math.abs(rightWrist.y - rightShoulder.y) < 50;
-      if (armsHorizontal) {
-        return { pose: 'Warrior II (Virabhadrasana II)', confidence: avgConfidence };
+      if ((leftLegLifted && rightLegAngle > 160) || (rightLegLifted && leftLegAngle > 160)) {
+        if (isVisible(leftWrist) && isVisible(rightWrist)) {
+          if (leftWrist.y < leftShoulder.y - 20 && rightWrist.y < rightShoulder.y - 20) {
+            return { pose: 'Tree Pose - Arms Up (Vrksasana)', confidence: avgConfidence };
+          }
+        }
+        return { pose: 'Tree Pose (Vrksasana)', confidence: avgConfidence };
       }
     }
 
-    // Warrior III - standing on one leg, body horizontal
-    const bodyHorizontal = shoulderCenterY > hipCenterY - 50;
-    if ((leftLegAngle > 160 && rightHip.y < rightShoulder.y) ||
-        (rightLegAngle > 160 && leftHip.y < leftShoulder.y)) {
-      if (bodyHorizontal && (leftWrist.y < leftShoulder.y || rightWrist.y < rightShoulder.y)) {
-        return { pose: 'Warrior III (Virabhadrasana III)', confidence: avgConfidence };
+    // Mountain Pose with arms up
+    if (leftLegAngle > 170 && rightLegAngle > 170 &&
+        isVisible(leftWrist) && isVisible(rightWrist) &&
+        leftWrist.y < leftShoulder.y - 60 && rightWrist.y < rightShoulder.y - 60) {
+      return { pose: 'Mountain Pose - Arms Up (Tadasana)', confidence: avgConfidence };
+    }
+
+    // Warrior I - deep lunge, arms raised
+    if (countVisible([leftKnee, rightKnee, leftWrist, rightWrist]) >= 4) {
+      const leftLegBent = leftLegAngle < 120 && leftLegAngle > 60;
+      const rightLegBent = rightLegAngle < 120 && rightLegAngle > 60;
+      const leftLegStraight = leftLegAngle > 160;
+      const rightLegStraight = rightLegAngle > 160;
+
+      if ((leftLegBent && rightLegStraight) || (rightLegBent && leftLegStraight)) {
+        if (leftWrist.y < leftShoulder.y - 80 && rightWrist.y < rightShoulder.y - 80) {
+          return { pose: 'Warrior I (Virabhadrasana I)', confidence: avgConfidence };
+        }
       }
     }
 
-    // Triangle Pose - legs wide, one arm up, one arm down
-    const legsWide = Math.abs(leftAnkle.x - rightAnkle.x) > 150;
-    if (legsWide && leftLegAngle > 160 && rightLegAngle > 160) {
-      if ((leftWrist.y < leftShoulder.y - 50 && rightWrist.y > rightHip.y) ||
-          (rightWrist.y < rightShoulder.y - 50 && leftWrist.y > leftHip.y)) {
+    // Warrior II - lunge with horizontal arms
+    if (countVisible([leftKnee, rightKnee, leftWrist, rightWrist]) >= 4) {
+      const leftLegBent = leftLegAngle < 120 && leftLegAngle > 60;
+      const rightLegBent = rightLegAngle < 120 && rightLegAngle > 60;
+      const leftLegStraight = leftLegAngle > 160;
+      const rightLegStraight = rightLegAngle > 160;
+
+      if ((leftLegBent && rightLegStraight) || (rightLegBent && leftLegStraight)) {
+        const leftArmHorizontal = Math.abs(leftWrist.y - leftShoulder.y) < 40;
+        const rightArmHorizontal = Math.abs(rightWrist.y - rightShoulder.y) < 40;
+
+        if (leftArmHorizontal && rightArmHorizontal &&
+            Math.abs(leftWrist.x - leftShoulder.x) > 80 && Math.abs(rightWrist.x - rightShoulder.x) > 80) {
+          return { pose: 'Warrior II (Virabhadrasana II)', confidence: avgConfidence };
+        }
+      }
+    }
+
+    // Downward Dog - inverted V shape
+    if (countVisible([leftElbow, rightElbow, leftHip, rightHip, leftWrist, rightWrist]) >= 5) {
+      const armsExtended = leftElbow.y > leftShoulder.y + 20 && rightElbow.y > rightShoulder.y + 20;
+      const hipsUp = leftHip.y < leftShoulder.y - 30 && rightHip.y < rightShoulder.y - 30;
+      const hipAngleGood = leftHipAngle < 130 && rightHipAngle < 130;
+
+      if (armsExtended && hipsUp && hipAngleGood) {
+        return { pose: 'Downward Dog (Adho Mukha Svanasana)', confidence: avgConfidence };
+      }
+    }
+
+    // Plank Pose - horizontal body
+    if (countVisible([leftElbow, rightElbow, leftHip, rightHip]) >= 4) {
+      const armsExtended = leftArmAngle > 160 && rightArmAngle > 160;
+      const bodyHorizontal = Math.abs(shoulderCenterY - hipCenterY) < 40;
+      const legsExtended = leftLegAngle > 165 && rightLegAngle > 165;
+
+      if (armsExtended && bodyHorizontal && legsExtended) {
+        return { pose: 'Plank Pose (Phalakasana)', confidence: avgConfidence };
+      }
+    }
+
+    // Child's Pose - forehead to ground, back rounded
+    if (countVisible([nose, leftKnee, rightKnee, leftShoulder, rightShoulder]) >= 5) {
+      const kneesDown = leftKnee.y > leftHip.y + 40 && rightKnee.y > rightHip.y + 40;
+      const headDown = nose.y > shoulderCenterY + 100;
+      const backRounded = shoulderCenterY > hipCenterY - 20;
+
+      if (kneesDown && headDown && backRounded) {
+        return { pose: 'Child\'s Pose (Balasana)', confidence: avgConfidence };
+      }
+    }
+
+    // Bridge Pose - lying back, hips raised
+    if (countVisible([leftShoulder, rightShoulder, leftHip, rightHip, leftKnee, rightKnee]) >= 6) {
+      const shouldersDown = shoulderCenterY > hipCenterY + 60;
+      const hipsRaised = leftHipAngle > 130 && rightHipAngle > 130;
+      const kneesFlexed = leftLegAngle > 80 && leftLegAngle < 140 && rightLegAngle > 80 && rightLegAngle < 140;
+
+      if (shouldersDown && hipsRaised && kneesFlexed) {
+        return { pose: 'Bridge Pose (Setu Bandhasana)', confidence: avgConfidence };
+      }
+    }
+
+    // Standing Forward Bend - head down, legs straight
+    if (countVisible([nose, leftAnkle, rightAnkle, leftHip, rightHip]) >= 5) {
+      const legsExtended = leftLegAngle > 170 && rightLegAngle > 170;
+      const torsoDown = shoulderCenterY > hipCenterY + 120;
+      const headDown = nose.y > hipCenterY + 80;
+
+      if (legsExtended && torsoDown && headDown) {
+        return { pose: 'Standing Forward Bend (Uttanasana)', confidence: avgConfidence };
+      }
+    }
+
+    // Triangle Pose - wide legs, torso twisted
+    if (countVisible([leftAnkle, rightAnkle, leftWrist, rightWrist, leftShoulder]) >= 5) {
+      const legsWide = Math.abs(leftAnkle.x - rightAnkle.x) > 200;
+      const legsExtended = leftLegAngle > 170 && rightLegAngle > 170;
+      const torsoTwisted = Math.abs(leftWrist.y - rightWrist.y) > 100;
+
+      if (legsWide && legsExtended && torsoTwisted) {
         return { pose: 'Triangle Pose (Trikonasana)', confidence: avgConfidence };
       }
     }
 
-    // Chair Pose - knees bent, arms raised
-    if (leftLegAngle < 140 && rightLegAngle < 140 && leftLegAngle > 70 && rightLegAngle > 70) {
-      if (leftWrist.y < leftShoulder.y - 50 && rightWrist.y < rightShoulder.y - 50) {
+    // Chair Pose - knees bent deeply, arms raised
+    if (countVisible([leftKnee, rightKnee, leftWrist, rightWrist]) >= 4) {
+      const kneesBent = leftLegAngle < 110 && rightLegAngle < 110 && leftLegAngle > 70 && rightLegAngle > 70;
+      const armsUp = leftWrist.y < leftShoulder.y - 60 && rightWrist.y < rightShoulder.y - 60;
+
+      if (kneesBent && armsUp) {
         return { pose: 'Chair Pose (Utkatasana)', confidence: avgConfidence };
       }
     }
 
-    // Plank Pose
-    const torsoAngle = Math.abs(
-      Math.atan2(leftHip.y - leftShoulder.y, leftHip.x - leftShoulder.x) * 180 / Math.PI
-    );
-    if (torsoAngle < 30 && leftArmAngle > 150 && rightArmAngle > 150 &&
-        leftLegAngle > 150 && shoulderCenterY < hipCenterY + 50) {
-      return { pose: 'Plank Pose (Phalakasana)', confidence: avgConfidence };
-    }
+    // Cobra Pose - chest up, arms bent
+    if (countVisible([leftWrist, rightWrist, leftShoulder, nose]) >= 4) {
+      const chestUp = shoulderCenterY < hipCenterY - 50;
+      const armsBent = leftArmAngle < 140 && rightArmAngle < 140;
+      const handsLow = leftWrist.y > leftShoulder.y && rightWrist.y > rightShoulder.y;
 
-    // Side Plank - body sideways, one arm supporting
-    const armSupporting = (leftWrist.y > leftShoulder.y + 50 && leftElbow.y > leftShoulder.y) ||
-                          (rightWrist.y > rightShoulder.y + 50 && rightElbow.y > rightShoulder.y);
-    if (armSupporting && Math.abs(leftHip.x - rightHip.x) < 80) {
-      return { pose: 'Side Plank (Vasisthasana)', confidence: avgConfidence };
-    }
-
-    // Downward Dog
-    if (leftElbow.y > leftShoulder.y && rightElbow.y > rightShoulder.y &&
-        leftHip.y < leftShoulder.y && rightHip.y < rightShoulder.y &&
-        leftHipAngle < 120 && rightHipAngle < 120) {
-      return { pose: 'Downward Dog (Adho Mukha Svanasana)', confidence: avgConfidence };
-    }
-
-    // Upward Dog - chest up, arms straight, legs on ground
-    if (shoulderCenterY < hipCenterY - 50 && leftArmAngle > 150 && rightArmAngle > 150 &&
-        leftWrist.y > leftShoulder.y + 50) {
-      return { pose: 'Upward Dog (Urdhva Mukha Svanasana)', confidence: avgConfidence };
-    }
-
-    // Cobra Pose - similar to upward dog but more bent arms
-    if (shoulderCenterY < hipCenterY - 30 && leftArmAngle < 150 && rightArmAngle < 150 &&
-        leftWrist.y > leftShoulder.y) {
-      return { pose: 'Cobra Pose (Bhujangasana)', confidence: avgConfidence };
-    }
-
-    // Child's Pose
-    if (leftKnee.y > leftHip.y && rightKnee.y > rightHip.y &&
-        leftShoulder.y > leftHip.y && rightShoulder.y > rightHip.y &&
-        nose.y > shoulderCenterY) {
-      return { pose: 'Child\'s Pose (Balasana)', confidence: avgConfidence };
-    }
-
-    // Bridge Pose - lying on back, hips raised
-    if (shoulderCenterY > hipCenterY + 50 && leftKnee.y > leftHip.y && rightKnee.y > rightHip.y &&
-        leftHipAngle > 140 && rightHipAngle > 140) {
-      return { pose: 'Bridge Pose (Setu Bandhasana)', confidence: avgConfidence };
-    }
-
-    // Seated Forward Bend
-    if (leftLegAngle > 160 && rightLegAngle > 160 &&
-        leftHip.y < leftKnee.y && rightHip.y < rightKnee.y &&
-        shoulderCenterY > hipCenterY && nose.y > leftKnee.y) {
-      return { pose: 'Seated Forward Bend (Paschimottanasana)', confidence: avgConfidence };
-    }
-
-    // Camel Pose - kneeling, back arched, hands reaching back
-    if (leftKnee.y > leftHip.y - 50 && rightKnee.y > rightHip.y - 50 &&
-        shoulderCenterY < hipCenterY - 50 &&
-        leftWrist.y > leftHip.y && rightWrist.y > rightHip.y) {
-      return { pose: 'Camel Pose (Ustrasana)', confidence: avgConfidence };
-    }
-
-    // T-Pose / Extended Mountain with arms out
-    if (leftArmAngle > 160 && rightArmAngle > 160 && leftLegAngle > 160 && rightLegAngle > 160) {
-      if (Math.abs(leftWrist.y - leftShoulder.y) < 30 && Math.abs(rightWrist.y - rightShoulder.y) < 30) {
-        return { pose: 'T-Pose / Extended Mountain', confidence: avgConfidence };
+      if (chestUp && armsBent && handsLow) {
+        return { pose: 'Cobra Pose (Bhujangasana)', confidence: avgConfidence };
       }
-
-      // Mountain Pose with arms up
-      if (leftWrist.y < leftShoulder.y - 50 && rightWrist.y < rightShoulder.y - 50) {
-        return { pose: 'Mountain Pose - Arms Up (Tadasana)', confidence: avgConfidence };
-      }
-
-      return { pose: 'Mountain Pose (Tadasana)', confidence: avgConfidence };
     }
 
-    // Standing Forward Bend
-    if (leftLegAngle > 160 && rightLegAngle > 160 &&
-        shoulderCenterY > hipCenterY + 100 && nose.y > hipCenterY) {
-      return { pose: 'Standing Forward Bend (Uttanasana)', confidence: avgConfidence };
+    // Upward Dog - chest up, arms straight
+    if (countVisible([leftWrist, rightWrist, leftShoulder, leftHip]) >= 4) {
+      const chestUp = shoulderCenterY < hipCenterY - 60;
+      const armsExtended = leftArmAngle > 160 && rightArmAngle > 160;
+      const handsSupport = leftWrist.y > leftShoulder.y + 40 && rightWrist.y > rightShoulder.y + 40;
+
+      if (chestUp && armsExtended && handsSupport) {
+        return { pose: 'Upward Dog (Urdhva Mukha Svanasana)', confidence: avgConfidence };
+      }
     }
 
     // Default standing
-    if (leftLegAngle > 160 && rightLegAngle > 160) {
-      return { pose: 'Standing Position', confidence: avgConfidence };
+    if (leftLegAngle > 170 && rightLegAngle > 170) {
+      return { pose: 'Mountain Pose (Tadasana)', confidence: avgConfidence };
     }
 
     return { pose: 'Unknown Pose', confidence: avgConfidence };
@@ -409,35 +447,37 @@ const YogaPoseDetector: React.FC = () => {
 
     if (!keypoints || keypoints.length === 0) return;
 
-    // Determine color based on detected pose
     const isPoseDetected = detectedPose !== 'Unknown Pose' &&
                            detectedPose !== 'Standing Position' &&
-                           detectedPose !== 'Unknown';
+                           detectedPose !== 'Unknown' &&
+                           detectedPose !== 'No pose detected';
 
-    const skeletonColor = isPoseDetected ? '#00FF00' : '#FFAA00'; // Green if pose detected, orange otherwise
-    const lineWidth = isPoseDetected ? 6 : 4; // Thicker lines when pose is detected
+    // Enhanced colors for better visibility
+    const skeletonColor = isPoseDetected ? '#00FF00' : '#FFA500';
+    const lineWidth = isPoseDetected ? 8 : 5;
+    const pointRadius = isPoseDetected ? 10 : 7;
 
     const connections: [number, number][] = [
-      [5, 7], [7, 9],    // Left arm
-      [6, 8], [8, 10],   // Right arm
-      [5, 6],            // Shoulders
-      [5, 11], [6, 12],  // Torso
-      [11, 12],          // Hips
-      [11, 13], [13, 15], // Left leg
-      [12, 14], [14, 16], // Right leg
-      [0, 1], [0, 2],    // Face
-      [1, 3], [2, 4],    // Ears
+      [5, 7], [7, 9], [6, 8], [8, 10], [5, 6], [5, 11], [6, 12], [11, 12],
+      [11, 13], [13, 15], [12, 14], [14, 16], [0, 1], [0, 2], [1, 3], [2, 4],
     ];
 
-    // Draw connection lines with glow effect
+    // Draw glowing background effect when pose is detected
+    if (isPoseDetected) {
+      ctx.fillStyle = 'rgba(0, 255, 0, 0.05)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Draw connection lines with enhanced styling
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Add glow effect for detected poses
     if (isPoseDetected) {
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 20;
       ctx.shadowColor = skeletonColor;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
     }
 
     for (const [idx1, idx2] of connections) {
@@ -445,7 +485,6 @@ const YogaPoseDetector: React.FC = () => {
       const kp2 = keypoints[idx2];
 
       if (kp1 && kp2 && (kp1.score || 0) > 0.3 && (kp2.score || 0) > 0.3) {
-        // Draw outer glow
         ctx.strokeStyle = skeletonColor;
         ctx.beginPath();
         ctx.moveTo(kp1.x, kp1.y);
@@ -454,70 +493,92 @@ const YogaPoseDetector: React.FC = () => {
       }
     }
 
-    // Reset shadow
     ctx.shadowBlur = 0;
 
-    // Draw keypoints with enhanced visibility
+    // Draw keypoints with enhanced styling
     for (const kp of keypoints) {
       if (kp && (kp.score || 0) > 0.3) {
-        // Outer glow circle
+        // Outer glow for detected poses
         if (isPoseDetected) {
-          ctx.fillStyle = skeletonColor + '40'; // Semi-transparent
+          ctx.fillStyle = skeletonColor + '30';
           ctx.beginPath();
-          ctx.arc(kp.x, kp.y, 12, 0, Math.PI * 2);
+          ctx.arc(kp.x, kp.y, pointRadius + 8, 0, Math.PI * 2);
           ctx.fill();
         }
 
-        // Main circle
+        // Main point
         ctx.fillStyle = skeletonColor;
         ctx.beginPath();
-        ctx.arc(kp.x, kp.y, 8, 0, Math.PI * 2);
+        ctx.arc(kp.x, kp.y, pointRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        // Inner circle
+        // Inner highlight
         ctx.fillStyle = '#FFFFFF';
         ctx.beginPath();
-        ctx.arc(kp.x, kp.y, 4, 0, Math.PI * 2);
+        ctx.arc(kp.x, kp.y, pointRadius / 2, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    // Draw pose name on canvas when detected
+    // Enhanced pose name display with background
     if (isPoseDetected) {
+      const text = detectedPose.split('(')[0].trim();
+
+      ctx.font = 'bold 28px Arial';
+      ctx.textAlign = 'center';
+      const textMetrics = ctx.measureText(text);
+      const textWidth = textMetrics.width;
+      const x = canvas.width / 2;
+      const y = 50;
+
+      // Background box for text
+      ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+      ctx.fillRect(x - textWidth / 2 - 15, y - 30, textWidth + 30, 40);
+
+      // Border
+      ctx.strokeStyle = '#00FF00';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x - textWidth / 2 - 15, y - 30, textWidth + 30, 40);
+
+      // Text with outline
+      ctx.fillStyle = '#00FF00';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 4;
+      ctx.strokeText(text, x, y);
+      ctx.fillText(text, x, y);
+
+      // Add "Great!" text at bottom
       ctx.font = 'bold 24px Arial';
       ctx.fillStyle = '#00FF00';
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 3;
-
-      // Draw text with outline for better visibility
-      const text = detectedPose.split('(')[0].trim();
-      const textWidth = ctx.measureText(text).width;
-      const x = (canvas.width - textWidth) / 2;
-      const y = 40;
-
-      ctx.strokeText(text, x, y);
-      ctx.fillText(text, x, y);
+      ctx.textAlign = 'center';
+      ctx.strokeText('✓ Great!', canvas.width / 2, canvas.height - 30);
+      ctx.fillText('✓ Great!', canvas.width / 2, canvas.height - 30);
+    } else {
+      // Guidance text when no pose detected
+      ctx.font = 'bold 20px Arial';
+      ctx.fillStyle = '#FFA500';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
+      ctx.textAlign = 'center';
+      ctx.strokeText('Move into a pose', canvas.width / 2, canvas.height - 30);
+      ctx.fillText('Move into a pose', canvas.width / 2, canvas.height - 30);
     }
   };
 
   const detectPose = async () => {
-    if (!videoRef.current || !detector) {
-      return;
-    }
+    if (!videoRef.current || !detector) return;
 
     const video = videoRef.current;
 
-    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
-      return;
-    }
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) return;
 
     try {
       const poses = await detector.estimatePoses(video);
 
       if (poses && poses.length > 0 && poses[0].keypoints) {
         const rawKeypoints = poses[0].keypoints;
-
-        // MoveNet already returns pixel coordinates, not normalized!
         const keypoints = rawKeypoints.map((kp: any) => ({
           x: kp.x,
           y: kp.y,
@@ -527,18 +588,33 @@ const YogaPoseDetector: React.FC = () => {
 
         if (!isNaN(keypoints[0].x) && !isNaN(keypoints[0].y)) {
           lastKeypointsRef.current = keypoints;
-
           const { pose, confidence } = classifyPose(keypoints);
           setCurrentPose(pose);
           setConfidence(Math.round(confidence * 100));
+
+          // Check if this is a new pose detection for counting
+          const isPoseDetected = pose !== 'Unknown Pose' &&
+                                pose !== 'Standing Position' &&
+                                pose !== 'Unknown' &&
+                                pose !== 'No pose detected';
+
+          if (isPoseDetected && pose !== lastDetectedPose) {
+            setLastDetectedPose(pose);
+            setPoseCount(prev => prev + 1);
+            playSuccessSound();
+          } else if (!isPoseDetected) {
+            setLastDetectedPose('');
+          }
         } else {
-          console.error('Invalid coordinates after scaling:', keypoints[0]);
           setCurrentPose('No pose detected');
           setConfidence(0);
+          setLastDetectedPose('');
         }
       } else {
         setCurrentPose('No pose detected');
         setConfidence(0);
+        lastKeypointsRef.current = [];
+        setLastDetectedPose('');
       }
     } catch (err) {
       console.error('Detection error:', err);
@@ -566,28 +642,19 @@ const YogaPoseDetector: React.FC = () => {
     frameId = requestAnimationFrame(renderLoop);
 
     return () => {
-      if (frameId !== null) {
-        cancelAnimationFrame(frameId);
-      }
+      if (frameId !== null) cancelAnimationFrame(frameId);
     };
-  }, [isCameraOn]);
+  }, [isCameraOn, currentPose]);
 
   useEffect(() => {
     if (!isCameraOn || !detector) return;
 
     const startDelay = setTimeout(() => {
-      const intervalId = setInterval(() => {
-        detectPose();
-      }, 500); // Faster detection - every 500ms
+      const intervalId = setInterval(detectPose, 500);
+      return () => clearInterval(intervalId);
+    }, 500);
 
-      return () => {
-        clearInterval(intervalId);
-      };
-    }, 500); // Shorter initial delay
-
-    return () => {
-      clearTimeout(startDelay);
-    };
+    return () => clearTimeout(startDelay);
   }, [isCameraOn, detector]);
 
   return (
@@ -622,35 +689,10 @@ const YogaPoseDetector: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           <div className="lg:col-span-2">
             <div className="bg-white rounded-xl md:rounded-2xl shadow-xl p-3 md:p-6">
-              <div
-                ref={containerRef}
-                className="relative bg-gray-900 rounded-lg md:rounded-xl overflow-hidden"
-                style={{ aspectRatio: '4/3' }}
-              >
-                <div
-                  className="absolute inset-0 flex items-center justify-center"
-                  style={{
-                    transform: `scale(${zoom})`,
-                    transformOrigin: 'center center',
-                    transition: 'transform 0.2s ease-out'
-                  }}
-                >
-                  <video
-                    ref={videoRef}
-                    className="w-full h-full object-cover"
-                    playsInline
-                  />
-                  <canvas
-                    ref={canvasRef}
-                    className="absolute inset-0 w-full h-full pointer-events-none"
-                    style={{
-                      display: 'block',
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      zIndex: 50
-                    }}
-                  />
+              <div ref={containerRef} className="relative bg-gray-900 rounded-lg md:rounded-xl overflow-hidden" style={{ aspectRatio: '4/3' }}>
+                <div className="absolute inset-0 flex items-center justify-center" style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 0.2s ease-out' }}>
+                  <video ref={videoRef} className="w-full h-full object-cover" playsInline />
+                  <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
                 </div>
 
                 {!isCameraOn && !isCameraLoading && (
@@ -671,30 +713,15 @@ const YogaPoseDetector: React.FC = () => {
                   </div>
                 )}
 
-                {/* Zoom Controls Overlay */}
                 {isCameraOn && (
                   <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-30">
-                    <button
-                      onClick={handleZoomIn}
-                      disabled={zoom >= 2}
-                      className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                      title="Zoom In"
-                    >
+                    <button onClick={handleZoomIn} disabled={zoom >= 2} className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all" title="Zoom In">
                       <ZoomIn size={20} className="text-gray-800" />
                     </button>
-                    <button
-                      onClick={resetZoom}
-                      className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg transition-all text-xs font-bold text-gray-800"
-                      title="Reset Zoom"
-                    >
+                    <button onClick={resetZoom} className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg transition-all text-xs font-bold text-gray-800" title="Reset Zoom">
                       {zoom.toFixed(1)}x
                     </button>
-                    <button
-                      onClick={handleZoomOut}
-                      disabled={zoom <= 0.5}
-                      className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                      title="Zoom Out"
-                    >
+                    <button onClick={handleZoomOut} disabled={zoom <= 0.5} className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all" title="Zoom Out">
                       <ZoomOut size={20} className="text-gray-800" />
                     </button>
                   </div>
@@ -702,27 +729,19 @@ const YogaPoseDetector: React.FC = () => {
               </div>
 
               <div className="mt-3 md:mt-4 flex flex-col sm:flex-row gap-2 md:gap-3 justify-center">
-                <button
-                  onClick={() => startCamera()}
-                  disabled={!isModelLoaded || isCameraOn || isCameraLoading}
-                  className="px-4 md:px-6 py-2 md:py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base"
-                >
+                <button onClick={() => startCamera()} disabled={!isModelLoaded || isCameraOn || isCameraLoading} className="px-4 md:px-6 py-2 md:py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base">
                   <Camera size={18} />
                   {isCameraLoading ? 'Starting...' : 'Start Camera'}
                 </button>
-                <button
-                  onClick={switchCamera}
-                  disabled={!isCameraOn}
-                  className="px-4 md:px-6 py-2 md:py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base"
-                >
+                <button onClick={switchCamera} disabled={!isCameraOn} className="px-4 md:px-6 py-2 md:py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base">
                   <SwitchCamera size={18} />
                   Switch
                 </button>
-                <button
-                  onClick={stopCamera}
-                  disabled={!isCameraOn}
-                  className="px-4 md:px-6 py-2 md:py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm md:text-base"
-                >
+                <button onClick={() => setSoundEnabled(!soundEnabled)} className={`px-4 md:px-6 py-2 md:py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 text-sm md:text-base ${soundEnabled ? 'bg-purple-500 hover:bg-purple-600 text-white' : 'bg-gray-400 hover:bg-gray-500 text-white'}`}>
+                  {soundEnabled ? '🔊' : '🔇'}
+                  {soundEnabled ? 'Sound ON' : 'Sound OFF'}
+                </button>
+                <button onClick={stopCamera} disabled={!isCameraOn} className="px-4 md:px-6 py-2 md:py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm md:text-base">
                   Stop Camera
                 </button>
               </div>
@@ -731,52 +750,20 @@ const YogaPoseDetector: React.FC = () => {
 
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl md:rounded-2xl shadow-xl p-4 md:p-6">
-              <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-3 md:mb-4">Current Pose</h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800">Current Pose</h2>
+                <div className="text-center">
+                  <div className="text-3xl md:text-4xl font-bold text-purple-600">{poseCount}</div>
+                  <div className="text-xs md:text-sm text-gray-600">Poses Found!</div>
+                </div>
+              </div>
 
               <div className="bg-gradient-to-br from-purple-100 to-blue-100 rounded-lg md:rounded-xl p-4 md:p-6 mb-4 md:mb-6">
                 <div className="flex flex-col md:flex-row items-center gap-4 mb-3">
-                  {/* Pose Image */}
-                  <div className="w-32 h-32 md:w-40 md:h-40 flex-shrink-0 bg-white rounded-lg overflow-hidden shadow-md">
-                    <img
-                      src={`/poses/${currentPose.toLowerCase().split('(')[0].trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.jpg`}
-                      alt={currentPose}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        // Fallback to emoji if image not found
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent && !parent.querySelector('.emoji-fallback')) {
-                          const fallback = document.createElement('div');
-                          fallback.className = 'emoji-fallback w-full h-full flex items-center justify-center text-6xl bg-gradient-to-br from-purple-50 to-blue-50';
-                          fallback.textContent =
-                            currentPose.includes('Tree') ? '🌳' :
-                            currentPose.includes('Mountain') ? '⛰️' :
-                            currentPose.includes('Warrior I') ? '🗡️' :
-                            currentPose.includes('Warrior II') ? '⚔️' :
-                            currentPose.includes('Warrior III') ? '🏹' :
-                            currentPose.includes('Triangle') ? '🔺' :
-                            currentPose.includes('Chair') ? '🪑' :
-                            currentPose.includes('Side Plank') ? '📐' :
-                            currentPose.includes('Plank') ? '🏋️' :
-                            currentPose.includes('Downward Dog') ? '🐕' :
-                            currentPose.includes('Upward Dog') ? '🐕‍🦺' :
-                            currentPose.includes('Cobra') ? '🐍' :
-                            currentPose.includes('Child') ? '👶' :
-                            currentPose.includes('Bridge') ? '🌉' :
-                            currentPose.includes('Forward Bend') ? '🤸' :
-                            currentPose.includes('Camel') ? '🐪' :
-                            currentPose.includes('T-Pose') ? '✝️' :
-                            currentPose.includes('Standing') ? '🧍' : '❓';
-                          parent.appendChild(fallback);
-                        }
-                      }}
-                    />
-                  </div>
+                  <div ref={imageDivRef} className="w-32 h-32 md:w-40 md:h-40 flex-shrink-0 bg-white rounded-lg overflow-hidden shadow-md" />
 
-                  {/* Pose Name and Confidence */}
                   <div className="flex-1 min-w-0 text-center md:text-left w-full">
-                    <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800 mb-2 break-words overflow-wrap-anywhere">
+                    <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800 mb-2 break-words">
                       {currentPose}
                     </p>
                     <div className="mt-3">
@@ -853,7 +840,7 @@ const YogaPoseDetector: React.FC = () => {
 
               <div className="mt-4 md:mt-6 p-3 md:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-xs text-gray-600">
-                  <strong>Note:</strong> Ensure good lighting and stand within the camera frame with your full body visible.
+                  <strong>Tip:</strong> Good lighting and full body visibility help with better pose detection!
                 </p>
               </div>
             </div>
