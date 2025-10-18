@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Camera, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Camera, AlertCircle, CheckCircle2, Loader2, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
 
 type Keypoint = {
   x: number;
@@ -33,6 +33,8 @@ const YogaPoseDetector: React.FC = () => {
   const [isCameraLoading, setIsCameraLoading] = useState(false);
   const [error, setError] = useState('');
   const [detector, setDetector] = useState<PoseDetector | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [zoom, setZoom] = useState(1);
 
   // Load model on mount
   useEffect(() => {
@@ -72,18 +74,30 @@ const YogaPoseDetector: React.FC = () => {
     loadModel();
   }, []);
 
-  const startCamera = async () => {
+  const startCamera = async (requestedFacingMode?: 'user' | 'environment') => {
     try {
       setIsCameraLoading(true);
       setError('');
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const mode = requestedFacingMode || facingMode;
+
+      const constraints: MediaStreamConstraints = {
         video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          facingMode: 'user'
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: mode
         }
-      });
+      };
+
+      // Try to apply zoom if supported (mainly for mobile)
+      if ('mediaDevices' in navigator && 'getSupportedConstraints' in navigator.mediaDevices) {
+        const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
+        if (supportedConstraints.zoom && constraints.video && typeof constraints.video === 'object') {
+          (constraints.video as any).zoom = zoom;
+        }
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -92,6 +106,7 @@ const YogaPoseDetector: React.FC = () => {
             await videoRef.current?.play();
             setIsCameraOn(true);
             setIsCameraLoading(false);
+            setFacingMode(mode);
           } catch (playError) {
             console.error('Error playing video:', playError);
             setError('Failed to start video playback');
@@ -106,6 +121,77 @@ const YogaPoseDetector: React.FC = () => {
     }
   };
 
+  const switchCamera = async () => {
+    if (!isCameraOn) return;
+
+    // Stop current camera
+    if (videoRef.current?.srcObject) {
+      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+      tracks.forEach(track => track.stop());
+    }
+
+    // Start with opposite facing mode
+    const newMode = facingMode === 'user' ? 'environment' : 'user';
+    await startCamera(newMode);
+  };
+
+  const handleZoomIn = async () => {
+    const newZoom = Math.min(zoom + 0.1, 2);
+    console.log('Zoom in:', zoom, '->', newZoom);
+    setZoom(newZoom);
+
+    // Restart camera with new zoom if supported
+    if (isCameraOn) {
+      await applyZoomToCamera(newZoom);
+    }
+  };
+
+  const handleZoomOut = async () => {
+    const newZoom = Math.max(zoom - 0.1, 0.5);
+    console.log('Zoom out:', zoom, '->', newZoom);
+    setZoom(newZoom);
+
+    // Restart camera with new zoom if supported
+    if (isCameraOn) {
+      await applyZoomToCamera(newZoom);
+    }
+  };
+
+  const resetZoom = async () => {
+    console.log('Reset zoom to 1.0');
+    setZoom(1);
+
+    if (isCameraOn) {
+      await applyZoomToCamera(1);
+    }
+  };
+
+  const applyZoomToCamera = async (zoomLevel: number) => {
+    if (!videoRef.current?.srcObject) return;
+
+    const stream = videoRef.current.srcObject as MediaStream;
+    const videoTrack = stream.getVideoTracks()[0];
+
+    if (!videoTrack) return;
+
+    try {
+      const capabilities = videoTrack.getCapabilities();
+      console.log('Camera capabilities:', capabilities);
+
+      if ('zoom' in capabilities) {
+        const constraints = {
+          advanced: [{ zoom: zoomLevel } as any]
+        };
+        await videoTrack.applyConstraints(constraints);
+        console.log('Hardware zoom applied:', zoomLevel);
+      } else {
+        console.log('Hardware zoom not supported, using CSS zoom');
+      }
+    } catch (err) {
+      console.log('Could not apply zoom constraint:', err);
+    }
+  };
+
   const stopCamera = () => {
     if (videoRef.current?.srcObject) {
       const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
@@ -116,6 +202,15 @@ const YogaPoseDetector: React.FC = () => {
     setCurrentPose('Unknown');
     setConfidence(0);
     lastKeypointsRef.current = [];
+
+    // Clear the canvas
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
   };
 
   const calculateAngle = (a: Keypoint, b: Keypoint, c: Keypoint): number => {
@@ -483,12 +578,12 @@ const YogaPoseDetector: React.FC = () => {
     const startDelay = setTimeout(() => {
       const intervalId = setInterval(() => {
         detectPose();
-      }, 2000);
+      }, 500); // Faster detection - every 500ms
 
       return () => {
         clearInterval(intervalId);
       };
-    }, 1000);
+    }, 500); // Shorter initial delay
 
     return () => {
       clearTimeout(startDelay);
@@ -496,58 +591,67 @@ const YogaPoseDetector: React.FC = () => {
   }, [isCameraOn, detector]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-2">Yoga Pose Detector</h1>
-          <p className="text-gray-600 text-base md:text-lg">Real-time pose detection using AI</p>
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center mb-4 md:mb-8">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-800 mb-1 md:mb-2">Yoga Pose Detector</h1>
+          <p className="text-sm sm:text-base md:text-lg text-gray-600">Real-time pose detection using AI</p>
         </div>
 
         {isLoading && (
-          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded-lg mb-4 flex items-center justify-center">
-            <Loader2 className="animate-spin mr-2" size={20} />
-            <span>Loading AI model...</span>
+          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center justify-center">
+            <Loader2 className="animate-spin mr-2" size={18} />
+            <span className="text-sm md:text-base">Loading AI model...</span>
           </div>
         )}
 
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4 flex items-center">
-            <AlertCircle className="mr-2 flex-shrink-0" size={20} />
-            <span className="text-sm md:text-base">{error}</span>
+          <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center">
+            <AlertCircle className="mr-2 flex-shrink-0" size={18} />
+            <span className="text-xs sm:text-sm md:text-base">{error}</span>
           </div>
         )}
 
         {isModelLoaded && !isCameraOn && !error && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-4 flex items-center justify-center">
-            <CheckCircle2 className="mr-2 flex-shrink-0" size={20} />
-            <span className="text-sm md:text-base">Model loaded successfully! Click Start Camera to begin.</span>
+          <div className="bg-green-100 border border-green-400 text-green-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center justify-center">
+            <CheckCircle2 className="mr-2 flex-shrink-0" size={18} />
+            <span className="text-xs sm:text-sm md:text-base">Model loaded successfully! Click Start Camera to begin.</span>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-xl p-4 md:p-6">
+            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl p-3 md:p-6">
               <div
                 ref={containerRef}
-                className="relative bg-gray-900 rounded-xl overflow-hidden"
+                className="relative bg-gray-900 rounded-lg md:rounded-xl overflow-hidden"
                 style={{ aspectRatio: '4/3' }}
               >
-                <video
-                  ref={videoRef}
-                  className="absolute inset-0 w-full h-full object-cover"
-                  playsInline
-                />
-                <canvas
-                  ref={canvasRef}
-                  className="absolute inset-0 w-full h-full"
+                <div
+                  className="absolute inset-0 flex items-center justify-center"
                   style={{
-                    display: 'block',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    zIndex: 50
+                    transform: `scale(${zoom})`,
+                    transformOrigin: 'center center',
+                    transition: 'transform 0.2s ease-out'
                   }}
-                />
+                >
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full object-cover"
+                    playsInline
+                  />
+                  <canvas
+                    ref={canvasRef}
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                    style={{
+                      display: 'block',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      zIndex: 50
+                    }}
+                  />
+                </div>
 
                 {!isCameraOn && !isCameraLoading && (
                   <div className="absolute inset-0 flex items-center justify-center text-gray-400">
@@ -566,21 +670,58 @@ const YogaPoseDetector: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Zoom Controls Overlay */}
+                {isCameraOn && (
+                  <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-30">
+                    <button
+                      onClick={handleZoomIn}
+                      disabled={zoom >= 2}
+                      className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      title="Zoom In"
+                    >
+                      <ZoomIn size={20} className="text-gray-800" />
+                    </button>
+                    <button
+                      onClick={resetZoom}
+                      className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg transition-all text-xs font-bold text-gray-800"
+                      title="Reset Zoom"
+                    >
+                      {zoom.toFixed(1)}x
+                    </button>
+                    <button
+                      onClick={handleZoomOut}
+                      disabled={zoom <= 0.5}
+                      className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut size={20} className="text-gray-800" />
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
+              <div className="mt-3 md:mt-4 flex flex-col sm:flex-row gap-2 md:gap-3 justify-center">
                 <button
-                  onClick={startCamera}
+                  onClick={() => startCamera()}
                   disabled={!isModelLoaded || isCameraOn || isCameraLoading}
-                  className="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  className="px-4 md:px-6 py-2 md:py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base"
                 >
-                  <Camera size={20} />
+                  <Camera size={18} />
                   {isCameraLoading ? 'Starting...' : 'Start Camera'}
+                </button>
+                <button
+                  onClick={switchCamera}
+                  disabled={!isCameraOn}
+                  className="px-4 md:px-6 py-2 md:py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base"
+                >
+                  <SwitchCamera size={18} />
+                  Switch
                 </button>
                 <button
                   onClick={stopCamera}
                   disabled={!isCameraOn}
-                  className="px-6 py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 md:px-6 py-2 md:py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm md:text-base"
                 >
                   Stop Camera
                 </button>
@@ -589,82 +730,128 @@ const YogaPoseDetector: React.FC = () => {
           </div>
 
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-xl p-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Current Pose</h2>
+            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl p-4 md:p-6">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-3 md:mb-4">Current Pose</h2>
 
-              <div className="bg-gradient-to-br from-purple-100 to-blue-100 rounded-xl p-6 mb-6">
-                <p className="text-2xl md:text-3xl font-bold text-gray-800 text-center mb-2 break-words">
-                  {currentPose}
-                </p>
-                <div className="mt-4">
-                  <div className="flex justify-between text-sm text-gray-600 mb-1">
-                    <span>Confidence</span>
-                    <span className="font-semibold">{confidence}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-gradient-to-r from-green-400 to-blue-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${confidence}%` }}
+              <div className="bg-gradient-to-br from-purple-100 to-blue-100 rounded-lg md:rounded-xl p-4 md:p-6 mb-4 md:mb-6">
+                <div className="flex flex-col md:flex-row items-center gap-4 mb-3">
+                  {/* Pose Image */}
+                  <div className="w-32 h-32 md:w-40 md:h-40 flex-shrink-0 bg-white rounded-lg overflow-hidden shadow-md">
+                    <img
+                      src={`/poses/${currentPose.toLowerCase().split('(')[0].trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.jpg`}
+                      alt={currentPose}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback to emoji if image not found
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent && !parent.querySelector('.emoji-fallback')) {
+                          const fallback = document.createElement('div');
+                          fallback.className = 'emoji-fallback w-full h-full flex items-center justify-center text-6xl bg-gradient-to-br from-purple-50 to-blue-50';
+                          fallback.textContent =
+                            currentPose.includes('Tree') ? '🌳' :
+                            currentPose.includes('Mountain') ? '⛰️' :
+                            currentPose.includes('Warrior I') ? '🗡️' :
+                            currentPose.includes('Warrior II') ? '⚔️' :
+                            currentPose.includes('Warrior III') ? '🏹' :
+                            currentPose.includes('Triangle') ? '🔺' :
+                            currentPose.includes('Chair') ? '🪑' :
+                            currentPose.includes('Side Plank') ? '📐' :
+                            currentPose.includes('Plank') ? '🏋️' :
+                            currentPose.includes('Downward Dog') ? '🐕' :
+                            currentPose.includes('Upward Dog') ? '🐕‍🦺' :
+                            currentPose.includes('Cobra') ? '🐍' :
+                            currentPose.includes('Child') ? '👶' :
+                            currentPose.includes('Bridge') ? '🌉' :
+                            currentPose.includes('Forward Bend') ? '🤸' :
+                            currentPose.includes('Camel') ? '🐪' :
+                            currentPose.includes('T-Pose') ? '✝️' :
+                            currentPose.includes('Standing') ? '🧍' : '❓';
+                          parent.appendChild(fallback);
+                        }
+                      }}
                     />
+                  </div>
+
+                  {/* Pose Name and Confidence */}
+                  <div className="flex-1 min-w-0 text-center md:text-left w-full">
+                    <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800 mb-2 break-words overflow-wrap-anywhere">
+                      {currentPose}
+                    </p>
+                    <div className="mt-3">
+                      <div className="flex justify-between text-xs md:text-sm text-gray-600 mb-1">
+                        <span>Confidence</span>
+                        <span className="font-semibold">{confidence}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-gradient-to-r from-green-400 to-blue-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${confidence}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-gray-800">Detectable Poses:</h3>
-                <ul className="space-y-2 text-sm text-gray-600">
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Mountain Pose (Tadasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Tree Pose (Vrksasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Warrior I, II, III (Virabhadrasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Triangle Pose (Trikonasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Chair Pose (Utkatasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Plank & Side Plank</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Downward & Upward Dog</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Cobra Pose (Bhujangasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Child's Pose (Balasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Bridge Pose (Setu Bandhasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Forward Bends (Uttanasana)</span>
-                  </li>
-                  <li className="flex items-start">
-                    <span className="text-green-500 mr-2 flex-shrink-0">✓</span>
-                    <span>Camel Pose (Ustrasana)</span>
-                  </li>
-                </ul>
+              <div className="space-y-3 md:space-y-4">
+                <h3 className="text-base md:text-lg font-semibold text-gray-800">Detectable Poses:</h3>
+                <div className="max-h-64 md:max-h-96 overflow-y-auto">
+                  <ul className="space-y-1.5 md:space-y-2 text-xs md:text-sm text-gray-600 pr-2">
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">⛰️</span>
+                      <span>Mountain Pose (Tadasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🌳</span>
+                      <span>Tree Pose (Vrksasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">⚔️</span>
+                      <span>Warrior I, II, III (Virabhadrasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🔺</span>
+                      <span>Triangle Pose (Trikonasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🪑</span>
+                      <span>Chair Pose (Utkatasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🏋️</span>
+                      <span>Plank & Side Plank</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🐕</span>
+                      <span>Downward & Upward Dog</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🐍</span>
+                      <span>Cobra Pose (Bhujangasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">👶</span>
+                      <span>Child's Pose (Balasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🌉</span>
+                      <span>Bridge Pose (Setu Bandhasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🤸</span>
+                      <span>Forward Bends (Uttanasana)</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 flex-shrink-0 text-lg">🐪</span>
+                      <span>Camel Pose (Ustrasana)</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
 
-              <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="mt-4 md:mt-6 p-3 md:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-xs text-gray-600">
                   <strong>Note:</strong> Ensure good lighting and stand within the camera frame with your full body visible.
                 </p>
@@ -673,8 +860,8 @@ const YogaPoseDetector: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-8 text-center text-gray-600">
-          <p className="text-sm">
+        <div className="mt-4 md:mt-8 text-center text-gray-600">
+          <p className="text-xs md:text-sm">
             Built with TensorFlow.js MoveNet • Real-time AI Pose Detection
           </p>
         </div>
