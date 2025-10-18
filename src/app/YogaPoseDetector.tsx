@@ -91,7 +91,7 @@ const YogaPoseDetector: React.FC = () => {
 
       // Try to apply zoom if supported (mainly for mobile)
       if ('mediaDevices' in navigator && 'getSupportedConstraints' in navigator.mediaDevices) {
-        const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
+        const supportedConstraints = navigator.mediaDevices.getSupportedConstraints() as any;
         if (supportedConstraints.zoom && constraints.video && typeof constraints.video === 'object') {
           (constraints.video as any).zoom = zoom;
         }
@@ -175,10 +175,10 @@ const YogaPoseDetector: React.FC = () => {
     if (!videoTrack) return;
 
     try {
-      const capabilities = videoTrack.getCapabilities();
+      const capabilities = videoTrack.getCapabilities() as any;
       console.log('Camera capabilities:', capabilities);
 
-      if ('zoom' in capabilities) {
+      if (capabilities && 'zoom' in capabilities) {
         const constraints = {
           advanced: [{ zoom: zoomLevel } as any]
         };
