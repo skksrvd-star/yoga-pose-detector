@@ -1,8 +1,5 @@
-'use client';
-
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, AlertCircle, CheckCircle2, Loader2, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
-import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 
 type Keypoint = {
   x: number;
@@ -20,7 +17,7 @@ interface PoseDataItem {
   name: string;
   description: string;
   image: string;
-  keypoints: any[]; // placeholder for future precise templates
+  keypoints: any[];
 }
 
 const POSES_JSON_PATH = '/posesData.json';
@@ -32,7 +29,7 @@ const YogaPoseDetector: React.FC = () => {
   const imageDivRef = useRef<HTMLDivElement | null>(null);
 
   const lastKeypointsRef = useRef<Keypoint[]>([]);
-  const landmarkerRef = useRef<PoseLandmarker | null>(null);
+  const landmarkerRef = useRef<any>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isModelLoaded, setIsModelLoaded] = useState(false);
@@ -51,13 +48,13 @@ const YogaPoseDetector: React.FC = () => {
   const [posesData, setPosesData] = useState<PoseDataItem[]>([]);
   const [selectedPoseIndex, setSelectedPoseIndex] = useState<number | null>(null);
 
-  // --------- Load model (MediaPipe Pose Landmarker) ----------
+  // Load model
   useEffect(() => {
     let cancelled = false;
     const loadModel = async () => {
       try {
         setIsLoading(true);
-        // FilesetResolver needs the wasm bundle URL
+        const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision');
         const vision = await FilesetResolver.forVisionTasks('/wasm');
 
         const landmarker = await PoseLandmarker.createFromOptions(vision, {
@@ -88,7 +85,7 @@ const YogaPoseDetector: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // --------- Load poses JSON ----------
+  // Load poses JSON
   useEffect(() => {
     const loadPoses = async () => {
       try {
@@ -104,7 +101,7 @@ const YogaPoseDetector: React.FC = () => {
     loadPoses();
   }, []);
 
-  // --------- Camera control ----------
+  // Camera control
   const startCamera = async (requestedFacingMode?: 'user' | 'environment') => {
     try {
       setIsCameraLoading(true);
@@ -198,7 +195,7 @@ const YogaPoseDetector: React.FC = () => {
     if (isCameraOn) await applyZoomToCamera(1);
   };
 
-  // --------- Sound ----------
+  // Sound
   const playSuccessSound = () => {
     if (!soundEnabled) return;
     try {
@@ -218,7 +215,7 @@ const YogaPoseDetector: React.FC = () => {
     }
   };
 
-  // --------- Helpers: angle calc (same logic adapted to MediaPipe indices) ----------
+  // Angle calculation
   const calculateAngle = (a: Keypoint, b: Keypoint, c: Keypoint): number => {
     const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
     let angle = Math.abs((radians * 180) / Math.PI);
@@ -226,20 +223,9 @@ const YogaPoseDetector: React.FC = () => {
     return angle;
   };
 
-  // Map MediaPipe indices to friendly names (BlazePose / MediaPipe 33 landmarks)
-  // nose = 0
-  // left_shoulder = 11, right_shoulder = 12
-  // left_elbow = 13, right_elbow = 14
-  // left_wrist = 15, right_wrist = 16
-  // left_hip = 23, right_hip = 24
-  // left_knee = 25, right_knee = 26
-  // left_ankle = 27, right_ankle = 28
-
   const classifyPose = (kps: Keypoint[]): PoseClassification => {
-    // require 33 landmarks (MediaPipe) ideally; if fewer, try to proceed
     if (!kps || kps.length < 17) return { pose: 'Unknown', confidence: 0 };
 
-    // map indices safely – if missing, fallback to zeros
     const kp = (idx: number) => kps[idx] ?? { x: 0, y: 0, score: 0 };
 
     const nose = kp(0);
@@ -256,11 +242,51 @@ const YogaPoseDetector: React.FC = () => {
     const leftAnkle = kp(27);
     const rightAnkle = kp(28);
 
-    const scores = kps.map(k => k.score ?? 1);
-    const avgConfidence = scores.reduce((a, b) => a + b, 0) / (scores.length || 1);
-    if (avgConfidence < 0.15) return { pose: 'Unknown', confidence: 0 };
+    // STRICT validation for body parts
+    const criticalBodyParts = [leftShoulder, rightShoulder, leftHip, rightHip];
+    const limbParts = [leftElbow, rightElbow, leftWrist, rightWrist, 
+                       leftKnee, rightKnee, leftAnkle, rightAnkle];
+    
+    const criticalScores = criticalBodyParts.map(k => k.score ?? 0);
+    const criticalVisible = criticalScores.filter(s => s > 0.6).length;
+    const avgCriticalScore = criticalScores.reduce((a, b) => a + b, 0) / 4;
+    
+    if (criticalVisible < 4 || avgCriticalScore < 0.6) {
+      return { pose: 'Unknown', confidence: 0 };
+    }
+    
+    // Sanity check: shoulders above hips
+    const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+    const hipY = (leftHip.y + rightHip.y) / 2;
+    if (shoulderY >= hipY - 20) {
+      return { pose: 'Unknown', confidence: 0 };
+    }
+    
+    // Check body proportions
+    const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
+    const hipWidth = Math.abs(leftHip.x - rightHip.x);
+    if (shoulderWidth < 30 || hipWidth < 20 || shoulderWidth > 800) {
+      return { pose: 'Unknown', confidence: 0 };
+    }
+    
+    // Need limbs visible
+    const limbScores = limbParts.map(k => k.score ?? 0);
+    const visibleLimbs = limbScores.filter(s => s > 0.5).length;
+    
+    if (visibleLimbs < 4) {
+      return { pose: 'Unknown', confidence: 0 };
+    }
+    
+    const allScores = [...criticalScores, ...limbScores].filter(s => s > 0.4);
+    const avgConfidence = allScores.length > 0 
+      ? allScores.reduce((a, b) => a + b, 0) / allScores.length 
+      : 0;
+    
+    if (avgConfidence < 0.6) {
+      return { pose: 'Unknown', confidence: 0 };
+    }
 
-    const isVisible = (k: Keypoint, t = 0.2) => (k.score ?? 1) > t;
+    const isVisible = (k: Keypoint, t = 0.3) => (k.score ?? 0) > t;
 
     const leftArmAngle = calculateAngle(leftShoulder, leftElbow, leftWrist);
     const rightArmAngle = calculateAngle(rightShoulder, rightElbow, rightWrist);
@@ -272,7 +298,6 @@ const YogaPoseDetector: React.FC = () => {
     const hipCenterY = (leftHip.y + rightHip.y) / 2;
     const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
 
-    // --- replicate your heuristics (adapted to mediaPipe indices) ---
     // Standing
     if (leftLegAngle > 150 && rightLegAngle > 150) {
       if (leftWrist.y < leftShoulder.y - 50 && rightWrist.y < rightShoulder.y - 50) {
@@ -284,7 +309,7 @@ const YogaPoseDetector: React.FC = () => {
       return { pose: 'Mountain Pose (Tadasana)', confidence: avgConfidence };
     }
 
-    // Tree Pose - one leg lifted
+    // Tree Pose
     if ((leftLegAngle > 140 && rightKnee.y < rightHip.y - 40) ||
         (rightLegAngle > 140 && leftKnee.y < leftHip.y - 40)) {
       return { pose: 'Tree Pose (Vrksasana)', confidence: avgConfidence };
@@ -364,7 +389,7 @@ const YogaPoseDetector: React.FC = () => {
     return { pose: 'Unknown Pose', confidence: avgConfidence };
   };
 
-  // --------- Drawing skeleton ----------
+  // Drawing skeleton
   const drawSkeleton = (keypoints: Keypoint[], detectedPose: string) => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -426,19 +451,17 @@ const YogaPoseDetector: React.FC = () => {
       }
     }
 
-    // Draw detected pose text
     ctx.font = 'bold 22px Arial';
     ctx.textAlign = 'center';
     ctx.fillStyle = isPoseDetected ? '#00FF00' : '#FFA500';
     ctx.fillText(detectedPose.split('(')[0].trim(), canvas.width/2, 36);
 
-    // Draw confidence at bottom
     ctx.font = '16px Arial';
     ctx.fillStyle = '#fff';
     ctx.fillText(`Confidence: ${Math.round(confidence)}%`, canvas.width/2, canvas.height - 20);
   };
 
-  // --------- Detection loop using PoseLandmarker ----------
+  // Detection loop
   useEffect(() => {
     if (!isCameraOn || !landmarkerRef.current || !videoRef.current) return;
 
@@ -461,26 +484,25 @@ const YogaPoseDetector: React.FC = () => {
 
       try {
         const result = landmarker.detectForVideo(video, performance.now());
-        // result.landmarks is array of landmarks for each detected pose
         const lm = result.landmarks?.[0] ?? null;
 
         if (lm && video) {
-          // MediaPipe landmarks are normalized: x,y from 0..1 - convert to pixels
           const keypoints: Keypoint[] = lm.map((p: any, i: number) => ({
             x: (p.x ?? 0) * video.videoWidth,
             y: (p.y ?? 0) * video.videoHeight,
-            score: (p.visibility ?? p.z === undefined ? 1 : 1), // fallback score
+            score: p.visibility ?? 0.5,
             name: `kp${i}`
           }));
           lastKeypointsRef.current = keypoints;
 
-          const { pose, confidence } = classifyPose(keypoints);
+          const { pose, confidence: conf } = classifyPose(keypoints);
           setCurrentPose(pose);
-          setConfidence(Math.round(confidence * 100));
+          setConfidence(Math.round(conf * 100));
 
           const isPoseDetected = pose !== 'Unknown Pose' &&
                                 pose !== 'Unknown' &&
-                                pose !== 'No pose detected';
+                                pose !== 'No pose detected' &&
+                                conf >= 0.6;
 
           if (isPoseDetected && pose !== lastDetectedPose) {
             setLastDetectedPose(pose);
@@ -499,27 +521,23 @@ const YogaPoseDetector: React.FC = () => {
         console.error('Detection error', e);
       }
 
-      // draw overlay every frame
       drawSkeleton(lastKeypointsRef.current, currentPose);
-
       raf = requestAnimationFrame(loop);
     };
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [isCameraOn, isModelLoaded, currentPose]);
+  }, [isCameraOn, isModelLoaded, currentPose, confidence]);
 
-  // redraw overlay when currentPose or keypoints change (safety)
   useEffect(() => {
     if (!isCameraOn) return;
     drawSkeleton(lastKeypointsRef.current, currentPose);
   }, [currentPose, confidence]);
 
-  // When user selects a pose thumbnail, display it
   useEffect(() => {
     if (!imageDivRef.current) return;
 
-    let imageUrl = '/poses/unknown-pose.jpg'; // default
+    let imageUrl = '/poses/unknown-pose.jpg';
     let altText = 'Unknown Pose';
 
     if (selectedPoseIndex !== null && posesData[selectedPoseIndex]) {
@@ -532,7 +550,6 @@ const YogaPoseDetector: React.FC = () => {
     `;
   }, [selectedPoseIndex, posesData]);
 
-  // ---------- UI ----------
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
@@ -577,29 +594,6 @@ const YogaPoseDetector: React.FC = () => {
                       <Camera size={64} className="mx-auto mb-4 opacity-50" />
                       <p className="text-lg">Camera is off</p>
                     </div>
-                  </div>
-                )}
-
-                {isCameraLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-50 z-20">
-                    <div className="text-center text-white">
-                      <Loader2 className="animate-spin mx-auto mb-2" size={48} />
-                      <p>Starting camera...</p>
-                    </div>
-                  </div>
-                )}
-
-                {isCameraOn && (
-                  <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-30">
-                    <button onClick={handleZoomIn} disabled={zoom >= 2} className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all" title="Zoom In">
-                      <ZoomIn size={20} className="text-gray-800" />
-                    </button>
-                    <button onClick={resetZoom} className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg transition-all text-xs font-bold text-gray-800" title="Reset Zoom">
-                      {zoom.toFixed(1)}x
-                    </button>
-                    <button onClick={handleZoomOut} disabled={zoom <= 0.5} className="p-2 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all" title="Zoom Out">
-                      <ZoomOut size={20} className="text-gray-800" />
-                    </button>
                   </div>
                 )}
               </div>
@@ -651,7 +645,11 @@ const YogaPoseDetector: React.FC = () => {
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
-                          className="bg-gradient-to-r from-green-400 to-blue-500 h-2 rounded-full transition-all duration-300"
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            confidence >= 70 ? 'bg-gradient-to-r from-green-400 to-green-500' :
+                            confidence >= 40 ? 'bg-gradient-to-r from-yellow-400 to-orange-400' :
+                            'bg-gradient-to-r from-red-400 to-red-500'
+                          }`}
                           style={{ width: `${confidence}%` }}
                         />
                       </div>
@@ -701,3 +699,4 @@ const YogaPoseDetector: React.FC = () => {
 };
 
 export default YogaPoseDetector;
+
