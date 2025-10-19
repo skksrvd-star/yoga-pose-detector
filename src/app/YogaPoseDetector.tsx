@@ -27,6 +27,7 @@ const YogaPoseDetector: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageDivRef = useRef<HTMLDivElement | null>(null);
+  const detectedImageDivRef = useRef<HTMLDivElement | null>(null);
 
   const lastKeypointsRef = useRef<Keypoint[]>([]);
   const landmarkerRef = useRef<any>(null);
@@ -244,44 +245,44 @@ const YogaPoseDetector: React.FC = () => {
 
     // STRICT validation for body parts
     const criticalBodyParts = [leftShoulder, rightShoulder, leftHip, rightHip];
-    const limbParts = [leftElbow, rightElbow, leftWrist, rightWrist, 
+    const limbParts = [leftElbow, rightElbow, leftWrist, rightWrist,
                        leftKnee, rightKnee, leftAnkle, rightAnkle];
-    
+
     const criticalScores = criticalBodyParts.map(k => k.score ?? 0);
     const criticalVisible = criticalScores.filter(s => s > 0.6).length;
     const avgCriticalScore = criticalScores.reduce((a, b) => a + b, 0) / 4;
-    
+
     if (criticalVisible < 4 || avgCriticalScore < 0.6) {
       return { pose: 'Unknown', confidence: 0 };
     }
-    
+
     // Sanity check: shoulders above hips
     const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
     const hipY = (leftHip.y + rightHip.y) / 2;
     if (shoulderY >= hipY - 20) {
       return { pose: 'Unknown', confidence: 0 };
     }
-    
+
     // Check body proportions
     const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
     const hipWidth = Math.abs(leftHip.x - rightHip.x);
     if (shoulderWidth < 30 || hipWidth < 20 || shoulderWidth > 800) {
       return { pose: 'Unknown', confidence: 0 };
     }
-    
+
     // Need limbs visible
     const limbScores = limbParts.map(k => k.score ?? 0);
     const visibleLimbs = limbScores.filter(s => s > 0.5).length;
-    
+
     if (visibleLimbs < 4) {
       return { pose: 'Unknown', confidence: 0 };
     }
-    
+
     const allScores = [...criticalScores, ...limbScores].filter(s => s > 0.4);
-    const avgConfidence = allScores.length > 0 
-      ? allScores.reduce((a, b) => a + b, 0) / allScores.length 
+    const avgConfidence = allScores.length > 0
+      ? allScores.reduce((a, b) => a + b, 0) / allScores.length
       : 0;
-    
+
     if (avgConfidence < 0.6) {
       return { pose: 'Unknown', confidence: 0 };
     }
@@ -534,6 +535,7 @@ const YogaPoseDetector: React.FC = () => {
     drawSkeleton(lastKeypointsRef.current, currentPose);
   }, [currentPose, confidence]);
 
+  // Target pose image (selected by user)
   useEffect(() => {
     if (!imageDivRef.current) return;
 
@@ -546,9 +548,53 @@ const YogaPoseDetector: React.FC = () => {
     }
 
     imageDivRef.current.innerHTML = `
-      <img src="${imageUrl}" alt="${altText}" class="w-full h-full object-cover" />
+      <img src="${imageUrl}" alt="${altText}" class="w-full h-full object-contain" />
     `;
   }, [selectedPoseIndex, posesData]);
+
+  // Detected pose image (what camera sees)
+  useEffect(() => {
+    if (!detectedImageDivRef.current || !posesData.length) return;
+
+    let imageUrl = '/poses/unknown-pose.jpg';
+    let altText = 'No Pose Detected';
+
+    // Find matching pose in posesData based on detected pose name
+    if (currentPose && currentPose !== 'Unknown' && currentPose !== 'Unknown Pose' && currentPose !== 'No pose detected') {
+      // Extract the main pose name (before parentheses)
+      const detectedPoseName = currentPose.split('(')[0].trim().toLowerCase();
+
+      // Try to find a match in posesData
+      const matchedPose = posesData.find(p => {
+        const poseName = p.name.toLowerCase();
+        // Check if pose name contains the detected pose or vice versa
+        return poseName.includes(detectedPoseName) ||
+               detectedPoseName.includes(poseName.split('(')[0].trim().toLowerCase());
+      });
+
+      if (matchedPose) {
+        imageUrl = matchedPose.image;
+        altText = matchedPose.name;
+      } else {
+        // If no match found, try partial matching with key words
+        const keywords = ['mountain', 'tree', 'warrior', 'chair', 'plank', 'downward', 'child', 'bridge', 'cobra', 'triangle', 'forward', 'upward'];
+        for (const keyword of keywords) {
+          if (detectedPoseName.includes(keyword)) {
+            const keywordMatch = posesData.find(p => p.name.toLowerCase().includes(keyword));
+            if (keywordMatch) {
+              imageUrl = keywordMatch.image;
+              altText = keywordMatch.name;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    detectedImageDivRef.current.innerHTML = `
+      <img src="${imageUrl}" alt="${altText}" class="w-full h-full object-contain" />
+    `;
+  }, [currentPose, posesData, confidence]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-3 md:p-8">
@@ -629,37 +675,75 @@ const YogaPoseDetector: React.FC = () => {
               </div>
 
               <div className="bg-gradient-to-br from-purple-100 to-blue-100 rounded-lg md:rounded-xl p-3 sm:p-4 md:p-6 mb-3 sm:mb-4 md:mb-6">
-                <div className="flex flex-col items-center gap-3 sm:gap-4 mb-2 sm:mb-3">
-                  <div ref={imageDivRef} className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 flex-shrink-0 bg-white rounded-lg overflow-hidden shadow-md" />
-
-                  <div className="flex-1 min-w-0 text-center w-full">
-                    <p className="text-sm sm:text-base md:text-lg lg:text-xl font-bold text-gray-800 mb-2 break-words leading-tight">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-2 sm:mb-3">
+                  {/* Target Pose */}
+                  <div className="flex flex-col items-center">
+                    <div className="text-xs sm:text-sm font-semibold text-purple-700 mb-2">🎯 Target</div>
+                    <div ref={imageDivRef} className="w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 flex-shrink-0 bg-white rounded-lg overflow-hidden shadow-md flex items-center justify-center" />
+                    <p className="text-xs sm:text-sm font-semibold text-gray-800 mt-2 text-center leading-tight">
                       {selectedPoseIndex !== null && posesData[selectedPoseIndex]
                         ? posesData[selectedPoseIndex].name
-                        : currentPose}
+                        : 'Not Selected'}
                     </p>
-                    <div className="mt-2 sm:mt-3">
-                      <div className="flex justify-between text-xs sm:text-sm text-gray-600 mb-1">
-                        <span>Confidence</span>
-                        <span className="font-semibold">{confidence}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 sm:h-2">
-                        <div
-                          className={`h-1.5 sm:h-2 rounded-full transition-all duration-300 ${
-                            confidence >= 70 ? 'bg-gradient-to-r from-green-400 to-green-500' :
-                            confidence >= 40 ? 'bg-gradient-to-r from-yellow-400 to-orange-400' :
-                            'bg-gradient-to-r from-red-400 to-red-500'
-                          }`}
-                          style={{ width: `${confidence}%` }}
-                        />
-                      </div>
-                      <p className="mt-1.5 sm:mt-2 text-xs text-gray-600 leading-tight">
-                        {selectedPoseIndex !== null && posesData[selectedPoseIndex]
-                          ? posesData[selectedPoseIndex].description
-                          : 'Select a pose below to practice.'}
-                      </p>
-                    </div>
                   </div>
+
+                  {/* Detected Pose */}
+                  <div className="flex flex-col items-center">
+                    <div className="text-xs sm:text-sm font-semibold text-green-700 mb-2">👁️ Detected</div>
+                    <div ref={detectedImageDivRef} className={`w-20 h-20 sm:w-28 sm:h-28 md:w-32 md:h-32 flex-shrink-0 bg-white rounded-lg overflow-hidden shadow-md flex items-center justify-center transition-all ${
+                      currentPose !== 'Unknown' && currentPose !== 'Unknown Pose' && currentPose !== 'No pose detected'
+                        ? 'ring-2 ring-green-400'
+                        : ''
+                    }`} />
+                    <p className={`text-xs sm:text-sm font-semibold mt-2 text-center leading-tight ${
+                      currentPose !== 'Unknown' && currentPose !== 'Unknown Pose' && currentPose !== 'No pose detected'
+                        ? 'text-green-600'
+                        : 'text-gray-500'
+                    }`}>
+                      {currentPose === 'Unknown' || currentPose === 'Unknown Pose' || currentPose === 'No pose detected'
+                        ? 'None'
+                        : currentPose.split('(')[0].trim()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Confidence Bar */}
+                <div className="mt-3 sm:mt-4">
+                  <div className="flex justify-between text-xs sm:text-sm text-gray-600 mb-1">
+                    <span>Confidence</span>
+                    <span className="font-semibold">{confidence}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5 sm:h-2">
+                    <div
+                      className={`h-1.5 sm:h-2 rounded-full transition-all duration-300 ${
+                        confidence >= 70 ? 'bg-gradient-to-r from-green-400 to-green-500' :
+                        confidence >= 40 ? 'bg-gradient-to-r from-yellow-400 to-orange-400' :
+                        'bg-gradient-to-r from-red-400 to-red-500'
+                      }`}
+                      style={{ width: `${confidence}%` }}
+                    />
+                  </div>
+
+                  {/* Match indicator */}
+                  {selectedPoseIndex !== null && posesData[selectedPoseIndex] && currentPose !== 'Unknown' && (
+                    <div className="mt-2 text-center">
+                      {currentPose.toLowerCase().includes(posesData[selectedPoseIndex].name.toLowerCase().split('(')[0].trim().toLowerCase()) ? (
+                        <div className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-green-600">
+                          ✓ Match! Keep holding the pose
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-orange-600">
+                          ⚠ Different pose detected
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="mt-2 text-xs text-gray-600 leading-tight text-center">
+                    {selectedPoseIndex !== null && posesData[selectedPoseIndex]
+                      ? posesData[selectedPoseIndex].description
+                      : 'Select a pose below to practice.'}
+                  </p>
                 </div>
               </div>
 
@@ -670,7 +754,9 @@ const YogaPoseDetector: React.FC = () => {
                     {posesData.map((p, idx) => (
                       <li key={p.name} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
                         <div className={`p-0.5 sm:p-1 rounded-md border-2 ${selectedPoseIndex === idx ? 'border-purple-500' : 'border-transparent'} hover:shadow-lg transition-all`}>
-                          <img src={p.image} alt={p.name} className="w-full h-16 sm:h-20 object-cover rounded-md" />
+                          <div className="w-full h-16 sm:h-20 bg-pink-50 rounded-md flex items-center justify-center overflow-hidden">
+                            <img src={p.image} alt={p.name} className="w-full h-full object-contain" />
+                          </div>
                           <div className="text-xs text-center mt-0.5 sm:mt-1 line-clamp-2">{p.name}</div>
                         </div>
                       </li>

@@ -1,7 +1,7 @@
 [
-  { "name": "Mountain Pose", "description": "Standing tall with feet together and hands by the side.", "image": "/poses/mountain-pose.png", "keypoints": [] },
-  { "name": "Tree Pose", "description": "Balancing on one leg with the other foot on the inner thigh, hands together above the head.", "image": "/poses/tree-pose.png", "keypoints": [] },
-  { "name": "Triangle Pose", "description": "Legs wide apart, one arm reaching down and the other up to form a triangle shape.", "image": "/poses/triangle-pose.png", "keypoints": [] },
+  { "name": "Mountain Pose", "description": "Standing tall with feet together and hands by the side.", "image": "/poses/mountain-pose.jpg", "keypoints": [] },
+  { "name": "Tree Pose", "description": "Balancing on one leg with the other foot on the inner thigh, hands together above the head.", "image": "/poses/tree-pose.jpg", "keypoints": [] },
+  { "name": "Triangle Pose", "description": "Legs wide apart, one arm reaching down and the other up to form a triangle shape.", "image": "/poses/triangle-pose.jpg", "keypoints": [] },
   { "name": "Warrior I", "description": "Front knee bent, back leg straight, arms extended overhead.", "image": "/poses/warrior-i.png", "keypoints": [] },
   { "name": "Warrior II", "description": "Front knee bent, back leg straight, arms extended sideways.", "image": "/poses/warrior-ii.png", "keypoints": [] },
   { "name": "Warrior III", "description": "Balancing on one leg, arms and torso extended forward.", "image": "/poses/warrior-iii.png", "keypoints": [] },
