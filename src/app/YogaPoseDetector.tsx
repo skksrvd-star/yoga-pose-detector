@@ -177,13 +177,14 @@ const YogaPoseDetector: React.FC = () => {
     if (!track) return;
     try {
       const caps = (track as any).getCapabilities?.();
-      if (caps && 'zoom' in caps) {
-        await track.applyConstraints({ advanced: [{ zoom: zoomLevel }] });
+      if (caps?.zoom) {
+        await track.applyConstraints({ advanced: [{ zoom: zoomLevel } as any] });
       }
     } catch (err) {
-      // ignore if device doesn't support
+      console.warn('Zoom not supported on this device', err);
     }
   };
+
 
   const handleZoomIn = async () => {
     const newZoom = Math.min(zoom + 0.1, 2);
