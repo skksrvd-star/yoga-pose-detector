@@ -58,17 +58,15 @@ const YogaPoseDetector: React.FC = () => {
       try {
         setIsLoading(true);
         // FilesetResolver needs the wasm bundle URL
-       const vision = await FilesetResolver.forVisionTasks('/wasm');
+        const vision = await FilesetResolver.forVisionTasks('/wasm');
 
-
-       const landmarker = await PoseLandmarker.createFromOptions(vision, {
-         baseOptions: {
-           modelAssetPath: '/models/pose_landmarker_lite.task',
-         },
-         runningMode: 'VIDEO',
-         numPoses: 1
-       });
-
+        const landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: '/models/pose_landmarker_lite.task',
+          },
+          runningMode: 'VIDEO',
+          numPoses: 1
+        });
 
         if (cancelled) {
           landmarker.close();
@@ -177,14 +175,13 @@ const YogaPoseDetector: React.FC = () => {
     if (!track) return;
     try {
       const caps = (track as any).getCapabilities?.();
-      if (caps?.zoom) {
-        await track.applyConstraints({ advanced: [{ zoom: zoomLevel } as any] });
+      if (caps && 'zoom' in caps) {
+        await track.applyConstraints({ advanced: [{ zoom: zoomLevel }] });
       }
     } catch (err) {
-      console.warn('Zoom not supported on this device', err);
+      // ignore if device doesn't support
     }
   };
-
 
   const handleZoomIn = async () => {
     const newZoom = Math.min(zoom + 0.1, 2);
@@ -242,7 +239,7 @@ const YogaPoseDetector: React.FC = () => {
     // require 33 landmarks (MediaPipe) ideally; if fewer, try to proceed
     if (!kps || kps.length < 17) return { pose: 'Unknown', confidence: 0 };
 
-    // map indices safely — if missing, fallback to zeros
+    // map indices safely – if missing, fallback to zeros
     const kp = (idx: number) => kps[idx] ?? { x: 0, y: 0, score: 0 };
 
     const nose = kp(0);
@@ -464,8 +461,8 @@ const YogaPoseDetector: React.FC = () => {
 
       try {
         const result = landmarker.detectForVideo(video, performance.now());
-        // result.poseLandmarks is array of landmarks for each detected pose
-        const lm = result.landmarks?.[0] ?? result.poseLandmarks?.[0] ?? null;
+        // result.landmarks is array of landmarks for each detected pose
+        const lm = result.landmarks?.[0] ?? null;
 
         if (lm && video) {
           // MediaPipe landmarks are normalized: x,y from 0..1 - convert to pixels
@@ -521,19 +518,17 @@ const YogaPoseDetector: React.FC = () => {
   // When user selects a pose thumbnail, display it
   useEffect(() => {
     if (!imageDivRef.current) return;
-    if (selectedPoseIndex === null) {
-      imageDivRef.current.innerHTML = '';
-      return;
-    }
 
-    const item = posesData[selectedPoseIndex];
-    if (!item) {
-      imageDivRef.current.innerHTML = '';
-      return;
+    let imageUrl = '/poses/unknown-pose.jpg'; // default
+    let altText = 'Unknown Pose';
+
+    if (selectedPoseIndex !== null && posesData[selectedPoseIndex]) {
+      imageUrl = posesData[selectedPoseIndex].image;
+      altText = posesData[selectedPoseIndex].name;
     }
 
     imageDivRef.current.innerHTML = `
-      <img src="${item.image}" alt="${item.name}" class="w-full h-full object-cover" onerror="this.style.display='none';" />
+      <img src="${imageUrl}" alt="${altText}" class="w-full h-full object-cover" />
     `;
   }, [selectedPoseIndex, posesData]);
 
@@ -543,7 +538,7 @@ const YogaPoseDetector: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-4 md:mb-8">
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-800 mb-1 md:mb-2">Yoga Pose Trainer</h1>
-          <p className="text-sm sm:text-base md:text-lg text-gray-600">Pick a pose below and match it — MediaPipe powers live tracking.</p>
+          <p className="text-sm sm:text-base md:text-lg text-gray-600">Pick a pose below and match it – MediaPipe powers live tracking.</p>
         </div>
 
         {isLoading && (
@@ -563,7 +558,7 @@ const YogaPoseDetector: React.FC = () => {
         {isModelLoaded && !isCameraOn && !error && (
           <div className="bg-green-100 border border-green-400 text-green-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center justify-center">
             <CheckCircle2 className="mr-2 flex-shrink-0" size={18} />
-            <span className="text-xs sm:text-sm md:text-base">Model ready — pick a pose and Start Camera.</span>
+            <span className="text-xs sm:text-sm md:text-base">Model ready – pick a pose and Start Camera.</span>
           </div>
         )}
 
