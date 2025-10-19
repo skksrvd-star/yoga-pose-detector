@@ -551,38 +551,38 @@ const YogaPoseDetector: React.FC = () => {
   }, [selectedPoseIndex, posesData]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-3 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-4 md:mb-8">
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-800 mb-1 md:mb-2">Yoga Pose Trainer</h1>
-          <p className="text-sm sm:text-base md:text-lg text-gray-600">Pick a pose below and match it – MediaPipe powers live tracking.</p>
+        <div className="text-center mb-3 sm:mb-4 md:mb-8">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-1 md:mb-2">Yoga Pose Trainer</h1>
+          <p className="text-xs sm:text-sm md:text-base lg:text-lg text-gray-600 px-2">Pick a pose below and match it – MediaPipe powers live tracking.</p>
         </div>
 
         {isLoading && (
-          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center justify-center">
-            <Loader2 className="animate-spin mr-2" size={18} />
-            <span className="text-sm md:text-base">Loading model & assets...</span>
+          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-2 py-2 sm:px-3 sm:py-2 md:px-4 md:py-3 rounded-lg mb-2 sm:mb-3 md:mb-4 flex items-center justify-center">
+            <Loader2 className="animate-spin mr-2 flex-shrink-0" size={16} />
+            <span className="text-xs sm:text-sm md:text-base">Loading model...</span>
           </div>
         )}
 
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center">
-            <AlertCircle className="mr-2 flex-shrink-0" size={18} />
+          <div className="bg-red-100 border border-red-400 text-red-700 px-2 py-2 sm:px-3 sm:py-2 md:px-4 md:py-3 rounded-lg mb-2 sm:mb-3 md:mb-4 flex items-center">
+            <AlertCircle className="mr-2 flex-shrink-0" size={16} />
             <span className="text-xs sm:text-sm md:text-base">{error}</span>
           </div>
         )}
 
         {isModelLoaded && !isCameraOn && !error && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center justify-center">
-            <CheckCircle2 className="mr-2 flex-shrink-0" size={18} />
-            <span className="text-xs sm:text-sm md:text-base">Model ready – pick a pose and Start Camera.</span>
+          <div className="bg-green-100 border border-green-400 text-green-700 px-2 py-2 sm:px-3 sm:py-2 md:px-4 md:py-3 rounded-lg mb-2 sm:mb-3 md:mb-4 flex items-center justify-center">
+            <CheckCircle2 className="mr-2 flex-shrink-0" size={16} />
+            <span className="text-xs sm:text-sm md:text-base">Model ready – Start Camera!</span>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl p-3 md:p-6">
-              <div ref={containerRef} className="relative bg-gray-900 rounded-lg md:rounded-xl overflow-hidden" style={{ aspectRatio: '4/3' }}>
+            <div className="bg-white rounded-lg sm:rounded-xl md:rounded-2xl shadow-xl p-2 sm:p-3 md:p-6">
+              <div ref={containerRef} className="relative bg-gray-900 rounded-md sm:rounded-lg md:rounded-xl overflow-hidden" style={{ aspectRatio: '4/3' }}>
                 <div className="absolute inset-0 flex items-center justify-center" style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 0.2s ease-out' }}>
                   <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
                   <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
@@ -619,33 +619,33 @@ const YogaPoseDetector: React.FC = () => {
           </div>
 
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl p-4 md:p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-800">Target Pose</h2>
+            <div className="bg-white rounded-lg sm:rounded-xl md:rounded-2xl shadow-xl p-3 sm:p-4 md:p-6">
+              <div className="flex justify-between items-center mb-3 sm:mb-4">
+                <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800">Target Pose</h2>
                 <div className="text-center">
-                  <div className="text-3xl md:text-4xl font-bold text-purple-600">{poseCount}</div>
-                  <div className="text-xs md:text-sm text-gray-600">Poses Found!</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-purple-600">{poseCount}</div>
+                  <div className="text-xs md:text-sm text-gray-600">Poses!</div>
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-purple-100 to-blue-100 rounded-lg md:rounded-xl p-4 md:p-6 mb-4 md:mb-6">
-                <div className="flex flex-col md:flex-row items-center gap-4 mb-3">
-                  <div ref={imageDivRef} className="w-32 h-32 md:w-40 md:h-40 flex-shrink-0 bg-white rounded-lg overflow-hidden shadow-md" />
+              <div className="bg-gradient-to-br from-purple-100 to-blue-100 rounded-lg md:rounded-xl p-3 sm:p-4 md:p-6 mb-3 sm:mb-4 md:mb-6">
+                <div className="flex flex-col items-center gap-3 sm:gap-4 mb-2 sm:mb-3">
+                  <div ref={imageDivRef} className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 flex-shrink-0 bg-white rounded-lg overflow-hidden shadow-md" />
 
-                  <div className="flex-1 min-w-0 text-center md:text-left w-full">
-                    <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800 mb-2 break-words">
+                  <div className="flex-1 min-w-0 text-center w-full">
+                    <p className="text-sm sm:text-base md:text-lg lg:text-xl font-bold text-gray-800 mb-2 break-words leading-tight">
                       {selectedPoseIndex !== null && posesData[selectedPoseIndex]
                         ? posesData[selectedPoseIndex].name
                         : currentPose}
                     </p>
-                    <div className="mt-3">
-                      <div className="flex justify-between text-xs md:text-sm text-gray-600 mb-1">
+                    <div className="mt-2 sm:mt-3">
+                      <div className="flex justify-between text-xs sm:text-sm text-gray-600 mb-1">
                         <span>Confidence</span>
                         <span className="font-semibold">{confidence}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 sm:h-2">
                         <div
-                          className={`h-2 rounded-full transition-all duration-300 ${
+                          className={`h-1.5 sm:h-2 rounded-full transition-all duration-300 ${
                             confidence >= 70 ? 'bg-gradient-to-r from-green-400 to-green-500' :
                             confidence >= 40 ? 'bg-gradient-to-r from-yellow-400 to-orange-400' :
                             'bg-gradient-to-r from-red-400 to-red-500'
@@ -653,7 +653,7 @@ const YogaPoseDetector: React.FC = () => {
                           style={{ width: `${confidence}%` }}
                         />
                       </div>
-                      <p className="mt-2 text-xs text-gray-600">
+                      <p className="mt-1.5 sm:mt-2 text-xs text-gray-600 leading-tight">
                         {selectedPoseIndex !== null && posesData[selectedPoseIndex]
                           ? posesData[selectedPoseIndex].description
                           : 'Select a pose below to practice.'}
@@ -663,15 +663,15 @@ const YogaPoseDetector: React.FC = () => {
                 </div>
               </div>
 
-              <div className="space-y-3 md:space-y-4">
-                <h3 className="text-base md:text-lg font-semibold text-gray-800">Pick a Pose to Practice</h3>
-                <div className="max-h-64 md:max-h-96 overflow-y-auto mt-2">
-                  <ul className="grid grid-cols-3 gap-2">
+              <div className="space-y-2 sm:space-y-3 md:space-y-4">
+                <h3 className="text-sm sm:text-base md:text-lg font-semibold text-gray-800">Pick a Pose</h3>
+                <div className="max-h-48 sm:max-h-64 md:max-h-96 overflow-y-auto">
+                  <ul className="grid grid-cols-3 gap-1.5 sm:gap-2">
                     {posesData.map((p, idx) => (
                       <li key={p.name} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
-                        <div className={`p-1 rounded-md border ${selectedPoseIndex === idx ? 'border-purple-500' : 'border-transparent'} hover:shadow-lg`}>
-                          <img src={p.image} alt={p.name} className="w-full h-20 object-cover rounded-md" />
-                          <div className="text-xs text-center mt-1">{p.name}</div>
+                        <div className={`p-0.5 sm:p-1 rounded-md border-2 ${selectedPoseIndex === idx ? 'border-purple-500' : 'border-transparent'} hover:shadow-lg transition-all`}>
+                          <img src={p.image} alt={p.name} className="w-full h-16 sm:h-20 object-cover rounded-md" />
+                          <div className="text-xs text-center mt-0.5 sm:mt-1 line-clamp-2">{p.name}</div>
                         </div>
                       </li>
                     ))}
@@ -679,8 +679,8 @@ const YogaPoseDetector: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-4 md:mt-6 p-3 md:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-xs text-gray-600">
+              <div className="mt-3 sm:mt-4 md:mt-6 p-2 sm:p-3 md:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-xs text-gray-600 leading-tight">
                   <strong>Tip:</strong> Good lighting and full body visibility help with better pose detection!
                 </p>
               </div>
@@ -688,9 +688,9 @@ const YogaPoseDetector: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-4 md:mt-8 text-center text-gray-600">
+        <div className="mt-3 sm:mt-4 md:mt-8 text-center text-gray-600">
           <p className="text-xs md:text-sm">
-            Built with MediaPipe Pose Landmarker • Real-time pose tracking
+            Built with MediaPipe Pose Landmarker • Real-time tracking
           </p>
         </div>
       </div>
