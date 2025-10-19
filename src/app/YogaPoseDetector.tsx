@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, AlertCircle, CheckCircle2, Loader2, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
+import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 
 type Keypoint = {
   x: number;
@@ -10,128 +11,117 @@ type Keypoint = {
   name?: string;
 };
 
-type PoseDetector = {
-  estimatePoses: (video: HTMLVideoElement) => Promise<any[]>;
-};
-
 interface PoseClassification {
   pose: string;
   confidence: number;
 }
 
+interface PoseDataItem {
+  name: string;
+  description: string;
+  image: string;
+  keypoints: any[]; // placeholder for future precise templates
+}
+
+const POSES_JSON_PATH = '/posesData.json';
+
 const YogaPoseDetector: React.FC = () => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const imageDivRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const imageDivRef = useRef<HTMLDivElement | null>(null);
+
   const lastKeypointsRef = useRef<Keypoint[]>([]);
+  const landmarkerRef = useRef<PoseLandmarker | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isModelLoaded, setIsModelLoaded] = useState(false);
-  const [currentPose, setCurrentPose] = useState('Unknown');
-  const [confidence, setConfidence] = useState(0);
+  const [error, setError] = useState('');
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isCameraLoading, setIsCameraLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [detector, setDetector] = useState<PoseDetector | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [zoom, setZoom] = useState(1);
   const [soundEnabled, setSoundEnabled] = useState(true);
+
+  const [currentPose, setCurrentPose] = useState('Unknown');
+  const [confidence, setConfidence] = useState(0);
   const [poseCount, setPoseCount] = useState(0);
   const [lastDetectedPose, setLastDetectedPose] = useState('');
 
+  const [posesData, setPosesData] = useState<PoseDataItem[]>([]);
+  const [selectedPoseIndex, setSelectedPoseIndex] = useState<number | null>(null);
+
+  // --------- Load model (MediaPipe Pose Landmarker) ----------
   useEffect(() => {
+    let cancelled = false;
     const loadModel = async () => {
       try {
         setIsLoading(true);
-        const [tf, poseDetectionModule] = await Promise.all([
-          import('@tensorflow/tfjs'),
-          import('@tensorflow-models/pose-detection')
-        ]);
+        // FilesetResolver needs the wasm bundle URL
+       const vision = await FilesetResolver.forVisionTasks('/wasm');
 
-        await tf.ready();
-        await tf.setBackend('webgl');
 
-        const detectorConfig = {
-          modelType: poseDetectionModule.movenet.modelType.SINGLEPOSE_LIGHTNING
-        };
+       const landmarker = await PoseLandmarker.createFromOptions(vision, {
+         baseOptions: {
+           modelAssetPath: '/models/pose_landmarker_lite.task',
+         },
+         runningMode: 'VIDEO',
+         numPoses: 1
+       });
 
-        const poseDetector = await poseDetectionModule.createDetector(
-          poseDetectionModule.SupportedModels.MoveNet,
-          detectorConfig
-        );
 
-        setDetector(poseDetector);
+        if (cancelled) {
+          landmarker.close();
+          return;
+        }
+
+        landmarkerRef.current = landmarker;
         setIsModelLoaded(true);
         setError('');
-      } catch (err) {
-        console.error('Error loading model:', err);
-        setError('Failed to load pose detection model. Please refresh the page.');
+      } catch (e) {
+        console.error('Failed to load MediaPipe PoseLandmarker', e);
+        setError('Failed to load pose model.');
       } finally {
         setIsLoading(false);
       }
     };
 
     loadModel();
+    return () => { cancelled = true; };
   }, []);
 
+  // --------- Load poses JSON ----------
   useEffect(() => {
-    if (!imageDivRef.current) return;
+    const loadPoses = async () => {
+      try {
+        const res = await fetch(POSES_JSON_PATH);
+        if (!res.ok) throw new Error('Failed to fetch poses JSON');
+        const data = await res.json();
+        setPosesData(data);
+      } catch (e) {
+        console.error(e);
+        setError(prev => prev ? prev : 'Failed to load poses data.');
+      }
+    };
+    loadPoses();
+  }, []);
 
-    const isUnknown = currentPose === 'Unknown Pose' || currentPose === 'Standing Position' ||
-                     currentPose === 'No pose detected' || currentPose === 'Unknown';
-
-    const imageSrc = isUnknown
-      ? '/poses/unknown-pose.jpg'
-      : `/poses/${currentPose.toLowerCase().split('(')[0].trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}.jpg`;
-
-    imageDivRef.current.innerHTML = `
-      <img
-        src="${imageSrc}"
-        alt="${currentPose}"
-        class="w-full h-full object-cover"
-        onerror="this.style.display='none';"
-      />
-    `;
-  }, [currentPose]);
-
-  const playSuccessSound = () => {
-    if (!soundEnabled) return;
-
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-
-    oscillator.frequency.value = 800;
-    oscillator.type = 'sine';
-
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.5);
-  };
-
+  // --------- Camera control ----------
   const startCamera = async (requestedFacingMode?: 'user' | 'environment') => {
     try {
       setIsCameraLoading(true);
       setError('');
-
-      const mode = requestedFacingMode || facingMode;
-
+      const mode = requestedFacingMode ?? facingMode;
       const constraints: MediaStreamConstraints = {
         video: {
           width: { ideal: 1280 },
           height: { ideal: 720 },
           facingMode: mode
-        }
+        },
+        audio: false
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = async () => {
@@ -140,72 +130,23 @@ const YogaPoseDetector: React.FC = () => {
             setIsCameraOn(true);
             setIsCameraLoading(false);
             setFacingMode(mode);
-          } catch (playError) {
-            console.error('Error playing video:', playError);
-            setError('Failed to start video playback');
+          } catch (playErr) {
+            console.error('Video play error', playErr);
+            setError('Failed to play camera stream.');
             setIsCameraLoading(false);
           }
         };
       }
     } catch (err) {
-      console.error('Error accessing camera:', err);
-      setError('Failed to access camera. Please grant camera permissions.');
+      console.error('Camera start error', err);
+      setError('Failed to access camera (permission denied or no camera).');
       setIsCameraLoading(false);
-    }
-  };
-
-  const switchCamera = async () => {
-    if (!isCameraOn) return;
-
-    if (videoRef.current?.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach(track => track.stop());
-    }
-
-    const newMode = facingMode === 'user' ? 'environment' : 'user';
-    await startCamera(newMode);
-  };
-
-  const handleZoomIn = async () => {
-    const newZoom = Math.min(zoom + 0.1, 2);
-    setZoom(newZoom);
-    if (isCameraOn) await applyZoomToCamera(newZoom);
-  };
-
-  const handleZoomOut = async () => {
-    const newZoom = Math.max(zoom - 0.1, 0.5);
-    setZoom(newZoom);
-    if (isCameraOn) await applyZoomToCamera(newZoom);
-  };
-
-  const resetZoom = async () => {
-    setZoom(1);
-    if (isCameraOn) await applyZoomToCamera(1);
-  };
-
-  const applyZoomToCamera = async (zoomLevel: number) => {
-    if (!videoRef.current?.srcObject) return;
-
-    const stream = videoRef.current.srcObject as MediaStream;
-    const videoTrack = stream.getVideoTracks()[0];
-
-    if (!videoTrack) return;
-
-    try {
-      const capabilities = videoTrack.getCapabilities() as any;
-      if (capabilities && 'zoom' in capabilities) {
-        const constraints = { advanced: [{ zoom: zoomLevel } as any] };
-        await videoTrack.applyConstraints(constraints);
-      }
-    } catch (err) {
-      console.log('Could not apply zoom constraint:', err);
     }
   };
 
   const stopCamera = () => {
     if (videoRef.current?.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-      tracks.forEach(track => track.stop());
+      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;
     }
     setIsCameraOn(false);
@@ -213,7 +154,6 @@ const YogaPoseDetector: React.FC = () => {
     setConfidence(0);
     setLastDetectedPose('');
     lastKeypointsRef.current = [];
-
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -221,39 +161,108 @@ const YogaPoseDetector: React.FC = () => {
     }
   };
 
+  const switchCamera = async () => {
+    if (!isCameraOn) return;
+    if (videoRef.current?.srcObject) {
+      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+    }
+    const newMode = facingMode === 'user' ? 'environment' : 'user';
+    await startCamera(newMode);
+  };
+
+  const applyZoomToCamera = async (zoomLevel: number) => {
+    if (!videoRef.current?.srcObject) return;
+    const stream = videoRef.current.srcObject as MediaStream;
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      const caps = (track as any).getCapabilities?.();
+      if (caps && 'zoom' in caps) {
+        await track.applyConstraints({ advanced: [{ zoom: zoomLevel }] });
+      }
+    } catch (err) {
+      // ignore if device doesn't support
+    }
+  };
+
+  const handleZoomIn = async () => {
+    const newZoom = Math.min(zoom + 0.1, 2);
+    setZoom(newZoom);
+    if (isCameraOn) await applyZoomToCamera(newZoom);
+  };
+  const handleZoomOut = async () => {
+    const newZoom = Math.max(zoom - 0.1, 0.5);
+    setZoom(newZoom);
+    if (isCameraOn) await applyZoomToCamera(newZoom);
+  };
+  const resetZoom = async () => {
+    setZoom(1);
+    if (isCameraOn) await applyZoomToCamera(1);
+  };
+
+  // --------- Sound ----------
+  const playSuccessSound = () => {
+    if (!soundEnabled) return;
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.type = 'sine';
+      osc.frequency.value = 800;
+      gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+      osc.start(audioContext.currentTime);
+      osc.stop(audioContext.currentTime + 0.45);
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  // --------- Helpers: angle calc (same logic adapted to MediaPipe indices) ----------
   const calculateAngle = (a: Keypoint, b: Keypoint, c: Keypoint): number => {
     const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-    let angle = Math.abs(radians * 180.0 / Math.PI);
-    if (angle > 180.0) angle = 360 - angle;
+    let angle = Math.abs((radians * 180) / Math.PI);
+    if (angle > 180) angle = 360 - angle;
     return angle;
   };
 
-  const classifyPose = (keypoints: Keypoint[]): PoseClassification => {
-    if (!keypoints || keypoints.length < 17) return { pose: 'Unknown', confidence: 0 };
+  // Map MediaPipe indices to friendly names (BlazePose / MediaPipe 33 landmarks)
+  // nose = 0
+  // left_shoulder = 11, right_shoulder = 12
+  // left_elbow = 13, right_elbow = 14
+  // left_wrist = 15, right_wrist = 16
+  // left_hip = 23, right_hip = 24
+  // left_knee = 25, right_knee = 26
+  // left_ankle = 27, right_ankle = 28
 
-    const filteredKeypoints = keypoints.map(kp => ({
-      ...kp,
-      score: kp.score || 0
-    }));
+  const classifyPose = (kps: Keypoint[]): PoseClassification => {
+    // require 33 landmarks (MediaPipe) ideally; if fewer, try to proceed
+    if (!kps || kps.length < 17) return { pose: 'Unknown', confidence: 0 };
 
-    const avgConfidence = filteredKeypoints.reduce((sum, kp) => sum + kp.score, 0) / filteredKeypoints.length;
-    if (avgConfidence < 0.25) return { pose: 'Unknown', confidence: 0 };
+    // map indices safely — if missing, fallback to zeros
+    const kp = (idx: number) => kps[idx] ?? { x: 0, y: 0, score: 0 };
 
-    const nose = keypoints[0];
-    const leftShoulder = keypoints[5];
-    const rightShoulder = keypoints[6];
-    const leftElbow = keypoints[7];
-    const rightElbow = keypoints[8];
-    const leftWrist = keypoints[9];
-    const rightWrist = keypoints[10];
-    const leftHip = keypoints[11];
-    const rightHip = keypoints[12];
-    const leftKnee = keypoints[13];
-    const rightKnee = keypoints[14];
-    const leftAnkle = keypoints[15];
-    const rightAnkle = keypoints[16];
+    const nose = kp(0);
+    const leftShoulder = kp(11);
+    const rightShoulder = kp(12);
+    const leftElbow = kp(13);
+    const rightElbow = kp(14);
+    const leftWrist = kp(15);
+    const rightWrist = kp(16);
+    const leftHip = kp(23);
+    const rightHip = kp(24);
+    const leftKnee = kp(25);
+    const rightKnee = kp(26);
+    const leftAnkle = kp(27);
+    const rightAnkle = kp(28);
 
-    const isVisible = (kp: Keypoint, threshold = 0.25) => (kp.score || 0) > threshold;
+    const scores = kps.map(k => k.score ?? 1);
+    const avgConfidence = scores.reduce((a, b) => a + b, 0) / (scores.length || 1);
+    if (avgConfidence < 0.15) return { pose: 'Unknown', confidence: 0 };
+
+    const isVisible = (k: Keypoint, t = 0.2) => (k.score ?? 1) > t;
 
     const leftArmAngle = calculateAngle(leftShoulder, leftElbow, leftWrist);
     const rightArmAngle = calculateAngle(rightShoulder, rightElbow, rightWrist);
@@ -265,7 +274,8 @@ const YogaPoseDetector: React.FC = () => {
     const hipCenterY = (leftHip.y + rightHip.y) / 2;
     const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
 
-    // Standing - default base pose
+    // --- replicate your heuristics (adapted to mediaPipe indices) ---
+    // Standing
     if (leftLegAngle > 150 && rightLegAngle > 150) {
       if (leftWrist.y < leftShoulder.y - 50 && rightWrist.y < rightShoulder.y - 50) {
         return { pose: 'Mountain Pose - Arms Up (Tadasana)', confidence: avgConfidence };
@@ -282,14 +292,14 @@ const YogaPoseDetector: React.FC = () => {
       return { pose: 'Tree Pose (Vrksasana)', confidence: avgConfidence };
     }
 
-    // Chair Pose - knees bent significantly
+    // Chair Pose
     if (leftLegAngle < 120 && rightLegAngle < 120 && leftLegAngle > 60 && rightLegAngle > 60) {
       if (leftWrist.y < leftShoulder.y - 40 && rightWrist.y < rightShoulder.y - 40) {
         return { pose: 'Chair Pose (Utkatasana)', confidence: avgConfidence };
       }
     }
 
-    // Warrior poses - lunge position
+    // Warrior poses
     if ((leftLegAngle < 130 && rightLegAngle > 140) || (rightLegAngle < 130 && leftLegAngle > 140)) {
       if (leftWrist.y < leftShoulder.y - 60 && rightWrist.y < rightShoulder.y - 60) {
         return { pose: 'Warrior I (Virabhadrasana I)', confidence: avgConfidence };
@@ -302,7 +312,7 @@ const YogaPoseDetector: React.FC = () => {
       return { pose: 'Warrior I (Virabhadrasana I)', confidence: avgConfidence };
     }
 
-    // Plank - horizontal body, arms extended
+    // Plank
     const torsoAngle = Math.abs(
       Math.atan2(leftHip.y - leftShoulder.y, leftHip.x - leftShoulder.x) * 180 / Math.PI
     );
@@ -311,7 +321,7 @@ const YogaPoseDetector: React.FC = () => {
       return { pose: 'Plank Pose (Phalakasana)', confidence: avgConfidence };
     }
 
-    // Downward Dog - inverted V
+    // Downward Dog
     if (isVisible(leftElbow) && isVisible(rightElbow) && isVisible(leftHip)) {
       const armsExtended = leftElbow.y > leftShoulder.y && rightElbow.y > rightShoulder.y;
       const hipsUp = leftHip.y < leftShoulder.y - 20 && rightHip.y < rightShoulder.y - 20;
@@ -320,37 +330,35 @@ const YogaPoseDetector: React.FC = () => {
       }
     }
 
-    // Child's Pose - knees bent, head down
+    // Child's Pose
     if (leftKnee.y > leftHip.y + 20 && rightKnee.y > rightHip.y + 20 &&
         shoulderCenterY > hipCenterY && nose.y > shoulderCenterY + 50) {
-      return { pose: 'Child\'s Pose (Balasana)', confidence: avgConfidence };
+      return { pose: "Child's Pose (Balasana)", confidence: avgConfidence };
     }
 
-    // Bridge Pose - hips raised, lying on back
+    // Bridge Pose
     if (shoulderCenterY > hipCenterY + 50 && leftKnee.y > leftHip.y && rightKnee.y > rightHip.y &&
         leftHipAngle > 120 && rightHipAngle > 120) {
       return { pose: 'Bridge Pose (Setu Bandhasana)', confidence: avgConfidence };
     }
 
-    // Standing Forward Bend - head low, legs straight
+    // Standing Forward Bend
     if (leftLegAngle > 150 && rightLegAngle > 150 &&
         shoulderCenterY > hipCenterY + 80 && nose.y > hipCenterY) {
       return { pose: 'Standing Forward Bend (Uttanasana)', confidence: avgConfidence };
     }
 
-    // Triangle Pose - legs wide, torso twisted
+    // Triangle Pose
     if (Math.abs(leftAnkle.x - rightAnkle.x) > 150 && leftLegAngle > 150 && rightLegAngle > 150) {
       if (Math.abs(leftWrist.y - rightWrist.y) > 80) {
         return { pose: 'Triangle Pose (Trikonasana)', confidence: avgConfidence };
       }
     }
 
-    // Cobra Pose - chest up, arms bent
+    // Cobra / Upward Dog
     if (shoulderCenterY < hipCenterY - 30 && leftArmAngle < 150 && rightArmAngle < 150) {
       return { pose: 'Cobra Pose (Bhujangasana)', confidence: avgConfidence };
     }
-
-    // Upward Dog - chest up, arms straight
     if (shoulderCenterY < hipCenterY - 40 && leftArmAngle > 140 && rightArmAngle > 140) {
       return { pose: 'Upward Dog (Urdhva Mukha Svanasana)', confidence: avgConfidence };
     }
@@ -358,52 +366,46 @@ const YogaPoseDetector: React.FC = () => {
     return { pose: 'Unknown Pose', confidence: avgConfidence };
   };
 
+  // --------- Drawing skeleton ----------
   const drawSkeleton = (keypoints: Keypoint[], detectedPose: string) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-
+    const video = videoRef.current;
+    if (!canvas || !video) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (!keypoints || keypoints.length === 0) return;
 
     const isPoseDetected = detectedPose !== 'Unknown Pose' &&
-                           detectedPose !== 'Standing Position' &&
                            detectedPose !== 'Unknown' &&
                            detectedPose !== 'No pose detected';
 
     const skeletonColor = isPoseDetected ? '#00FF00' : '#FFA500';
-    const lineWidth = isPoseDetected ? 8 : 5;
-    const pointRadius = isPoseDetected ? 10 : 7;
+    const lineWidth = isPoseDetected ? 6 : 4;
+    const pointRadius = isPoseDetected ? 8 : 6;
 
     const connections: [number, number][] = [
-      [5, 7], [7, 9], [6, 8], [8, 10], [5, 6], [5, 11], [6, 12], [11, 12],
-      [11, 13], [13, 15], [12, 14], [14, 16], [0, 1], [0, 2], [1, 3], [2, 4],
+      [11,13],[13,15],[12,14],[14,16],[11,12],[11,23],[12,24],[23,24],
+      [23,25],[25,27],[24,26],[26,28],[0,1],[0,2],[1,3],[2,4]
     ];
 
     if (isPoseDetected) {
-      ctx.fillStyle = 'rgba(0, 255, 0, 0.05)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(0,255,0,0.04)';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
     }
 
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    if (isPoseDetected) {
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = skeletonColor;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-    }
-
-    for (const [idx1, idx2] of connections) {
-      const kp1 = keypoints[idx1];
-      const kp2 = keypoints[idx2];
-
-      if (kp1 && kp2 && (kp1.score || 0) > 0.3 && (kp2.score || 0) > 0.3) {
+    for (const [a,b] of connections) {
+      const kp1 = keypoints[a];
+      const kp2 = keypoints[b];
+      if (kp1 && kp2 && (kp1.score ?? 1) > 0.2 && (kp2.score ?? 1) > 0.2) {
         ctx.strokeStyle = skeletonColor;
         ctx.beginPath();
         ctx.moveTo(kp1.x, kp1.y);
@@ -412,97 +414,73 @@ const YogaPoseDetector: React.FC = () => {
       }
     }
 
-    ctx.shadowBlur = 0;
-
-    for (const kp of keypoints) {
-      if (kp && (kp.score || 0) > 0.3) {
-        if (isPoseDetected) {
-          ctx.fillStyle = skeletonColor + '30';
-          ctx.beginPath();
-          ctx.arc(kp.x, kp.y, pointRadius + 8, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
+    for (const k of keypoints) {
+      if (!k) continue;
+      if ((k.score ?? 1) > 0.2) {
         ctx.fillStyle = skeletonColor;
         ctx.beginPath();
-        ctx.arc(kp.x, kp.y, pointRadius, 0, Math.PI * 2);
+        ctx.arc(k.x, k.y, pointRadius, 0, Math.PI*2);
         ctx.fill();
-
-        ctx.fillStyle = '#FFFFFF';
+        ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.arc(kp.x, kp.y, pointRadius / 2, 0, Math.PI * 2);
+        ctx.arc(k.x, k.y, Math.max(2, pointRadius/3), 0, Math.PI*2);
         ctx.fill();
       }
     }
 
-    if (isPoseDetected) {
-      const text = detectedPose.split('(')[0].trim();
+    // Draw detected pose text
+    ctx.font = 'bold 22px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = isPoseDetected ? '#00FF00' : '#FFA500';
+    ctx.fillText(detectedPose.split('(')[0].trim(), canvas.width/2, 36);
 
-      ctx.font = 'bold 28px Arial';
-      ctx.textAlign = 'center';
-      const textMetrics = ctx.measureText(text);
-      const textWidth = textMetrics.width;
-      const x = canvas.width / 2;
-      const y = 50;
-
-      ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
-      ctx.fillRect(x - textWidth / 2 - 15, y - 30, textWidth + 30, 40);
-
-      ctx.strokeStyle = '#00FF00';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(x - textWidth / 2 - 15, y - 30, textWidth + 30, 40);
-
-      ctx.fillStyle = '#00FF00';
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 4;
-      ctx.strokeText(text, x, y);
-      ctx.fillText(text, x, y);
-
-      ctx.font = 'bold 24px Arial';
-      ctx.fillStyle = '#00FF00';
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 3;
-      ctx.textAlign = 'center';
-      ctx.strokeText('✓ Great!', canvas.width / 2, canvas.height - 30);
-      ctx.fillText('✓ Great!', canvas.width / 2, canvas.height - 30);
-    } else {
-      ctx.font = 'bold 20px Arial';
-      ctx.fillStyle = '#FFA500';
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 3;
-      ctx.textAlign = 'center';
-      ctx.strokeText('Move into a pose', canvas.width / 2, canvas.height - 30);
-      ctx.fillText('Move into a pose', canvas.width / 2, canvas.height - 30);
-    }
+    // Draw confidence at bottom
+    ctx.font = '16px Arial';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`Confidence: ${Math.round(confidence)}%`, canvas.width/2, canvas.height - 20);
   };
 
-  const detectPose = async () => {
-    if (!videoRef.current || !detector) return;
+  // --------- Detection loop using PoseLandmarker ----------
+  useEffect(() => {
+    if (!isCameraOn || !landmarkerRef.current || !videoRef.current) return;
 
-    const video = videoRef.current;
+    let raf = 0;
+    let lastVideoTime = -1;
+    const landmarker = landmarkerRef.current;
 
-    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) return;
+    const loop = async () => {
+      const video = videoRef.current!;
+      if (!video || video.readyState < 2) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
 
-    try {
-      const poses = await detector.estimatePoses(video);
+      if (video.currentTime === lastVideoTime) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      lastVideoTime = video.currentTime;
 
-      if (poses && poses.length > 0 && poses[0].keypoints) {
-        const rawKeypoints = poses[0].keypoints;
-        const keypoints = rawKeypoints.map((kp: any) => ({
-          x: kp.x,
-          y: kp.y,
-          score: kp.score || 0,
-          name: kp.name
-        }));
+      try {
+        const result = landmarker.detectForVideo(video, performance.now());
+        // result.poseLandmarks is array of landmarks for each detected pose
+        const lm = result.landmarks?.[0] ?? result.poseLandmarks?.[0] ?? null;
 
-        if (!isNaN(keypoints[0].x) && !isNaN(keypoints[0].y)) {
+        if (lm && video) {
+          // MediaPipe landmarks are normalized: x,y from 0..1 - convert to pixels
+          const keypoints: Keypoint[] = lm.map((p: any, i: number) => ({
+            x: (p.x ?? 0) * video.videoWidth,
+            y: (p.y ?? 0) * video.videoHeight,
+            score: (p.visibility ?? p.z === undefined ? 1 : 1), // fallback score
+            name: `kp${i}`
+          }));
           lastKeypointsRef.current = keypoints;
+
           const { pose, confidence } = classifyPose(keypoints);
           setCurrentPose(pose);
           setConfidence(Math.round(confidence * 100));
 
           const isPoseDetected = pose !== 'Unknown Pose' &&
-                                pose !== 'Standing Position' &&
                                 pose !== 'Unknown' &&
                                 pose !== 'No pose detected';
 
@@ -516,67 +494,61 @@ const YogaPoseDetector: React.FC = () => {
         } else {
           setCurrentPose('No pose detected');
           setConfidence(0);
+          lastKeypointsRef.current = [];
           setLastDetectedPose('');
         }
-      } else {
-        setCurrentPose('No pose detected');
-        setConfidence(0);
-        lastKeypointsRef.current = [];
-        setLastDetectedPose('');
+      } catch (e) {
+        console.error('Detection error', e);
       }
-    } catch (err) {
-      console.error('Detection error:', err);
-    }
-  };
 
+      // draw overlay every frame
+      drawSkeleton(lastKeypointsRef.current, currentPose);
+
+      raf = requestAnimationFrame(loop);
+    };
+
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [isCameraOn, isModelLoaded, currentPose]);
+
+  // redraw overlay when currentPose or keypoints change (safety)
   useEffect(() => {
     if (!isCameraOn) return;
+    drawSkeleton(lastKeypointsRef.current, currentPose);
+  }, [currentPose, confidence]);
 
-    let frameId: number | null = null;
-
-    const renderLoop = () => {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-
-      if (canvas && video && video.readyState >= 2) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        drawSkeleton(lastKeypointsRef.current, currentPose);
-      }
-
-      frameId = requestAnimationFrame(renderLoop);
-    };
-
-    frameId = requestAnimationFrame(renderLoop);
-
-    return () => {
-      if (frameId !== null) cancelAnimationFrame(frameId);
-    };
-  }, [isCameraOn, currentPose]);
-
+  // When user selects a pose thumbnail, display it
   useEffect(() => {
-    if (!isCameraOn || !detector) return;
+    if (!imageDivRef.current) return;
+    if (selectedPoseIndex === null) {
+      imageDivRef.current.innerHTML = '';
+      return;
+    }
 
-    const startDelay = setTimeout(() => {
-      const intervalId = setInterval(detectPose, 500);
-      return () => clearInterval(intervalId);
-    }, 500);
+    const item = posesData[selectedPoseIndex];
+    if (!item) {
+      imageDivRef.current.innerHTML = '';
+      return;
+    }
 
-    return () => clearTimeout(startDelay);
-  }, [isCameraOn, detector]);
+    imageDivRef.current.innerHTML = `
+      <img src="${item.image}" alt="${item.name}" class="w-full h-full object-cover" onerror="this.style.display='none';" />
+    `;
+  }, [selectedPoseIndex, posesData]);
 
+  // ---------- UI ----------
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-4 md:mb-8">
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-800 mb-1 md:mb-2">Yoga Pose Detector</h1>
-          <p className="text-sm sm:text-base md:text-lg text-gray-600">Real-time pose detection using AI</p>
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-800 mb-1 md:mb-2">Yoga Pose Trainer</h1>
+          <p className="text-sm sm:text-base md:text-lg text-gray-600">Pick a pose below and match it — MediaPipe powers live tracking.</p>
         </div>
 
         {isLoading && (
           <div className="bg-blue-100 border border-blue-400 text-blue-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center justify-center">
             <Loader2 className="animate-spin mr-2" size={18} />
-            <span className="text-sm md:text-base">Loading AI model...</span>
+            <span className="text-sm md:text-base">Loading model & assets...</span>
           </div>
         )}
 
@@ -590,7 +562,7 @@ const YogaPoseDetector: React.FC = () => {
         {isModelLoaded && !isCameraOn && !error && (
           <div className="bg-green-100 border border-green-400 text-green-700 px-3 py-2 md:px-4 md:py-3 rounded-lg mb-3 md:mb-4 flex items-center justify-center">
             <CheckCircle2 className="mr-2 flex-shrink-0" size={18} />
-            <span className="text-xs sm:text-sm md:text-base">Model loaded successfully! Click Start Camera to begin.</span>
+            <span className="text-xs sm:text-sm md:text-base">Model ready — pick a pose and Start Camera.</span>
           </div>
         )}
 
@@ -599,7 +571,7 @@ const YogaPoseDetector: React.FC = () => {
             <div className="bg-white rounded-xl md:rounded-2xl shadow-xl p-3 md:p-6">
               <div ref={containerRef} className="relative bg-gray-900 rounded-lg md:rounded-xl overflow-hidden" style={{ aspectRatio: '4/3' }}>
                 <div className="absolute inset-0 flex items-center justify-center" style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 0.2s ease-out' }}>
-                  <video ref={videoRef} className="w-full h-full object-cover" playsInline />
+                  <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
                   <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
                 </div>
 
@@ -659,7 +631,7 @@ const YogaPoseDetector: React.FC = () => {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl md:rounded-2xl shadow-xl p-4 md:p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl md:text-2xl font-bold text-gray-800">Current Pose</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800">Target Pose</h2>
                 <div className="text-center">
                   <div className="text-3xl md:text-4xl font-bold text-purple-600">{poseCount}</div>
                   <div className="text-xs md:text-sm text-gray-600">Poses Found!</div>
@@ -672,7 +644,9 @@ const YogaPoseDetector: React.FC = () => {
 
                   <div className="flex-1 min-w-0 text-center md:text-left w-full">
                     <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-800 mb-2 break-words">
-                      {currentPose}
+                      {selectedPoseIndex !== null && posesData[selectedPoseIndex]
+                        ? posesData[selectedPoseIndex].name
+                        : currentPose}
                     </p>
                     <div className="mt-3">
                       <div className="flex justify-between text-xs md:text-sm text-gray-600 mb-1">
@@ -685,63 +659,28 @@ const YogaPoseDetector: React.FC = () => {
                           style={{ width: `${confidence}%` }}
                         />
                       </div>
+                      <p className="mt-2 text-xs text-gray-600">
+                        {selectedPoseIndex !== null && posesData[selectedPoseIndex]
+                          ? posesData[selectedPoseIndex].description
+                          : 'Select a pose below to practice.'}
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-3 md:space-y-4">
-                <h3 className="text-base md:text-lg font-semibold text-gray-800">Detectable Poses:</h3>
-                <div className="max-h-64 md:max-h-96 overflow-y-auto">
-                  <ul className="space-y-1.5 md:space-y-2 text-xs md:text-sm text-gray-600 pr-2">
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">⛰️</span>
-                      <span>Mountain Pose (Tadasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🌳</span>
-                      <span>Tree Pose (Vrksasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">⚔️</span>
-                      <span>Warrior I, II, III (Virabhadrasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🔺</span>
-                      <span>Triangle Pose (Trikonasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🪑</span>
-                      <span>Chair Pose (Utkatasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🏋️</span>
-                      <span>Plank & Side Plank</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🐕</span>
-                      <span>Downward & Upward Dog</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🐍</span>
-                      <span>Cobra Pose (Bhujangasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">👶</span>
-                      <span>Child's Pose (Balasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🌉</span>
-                      <span>Bridge Pose (Setu Bandhasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🤸</span>
-                      <span>Forward Bends (Uttanasana)</span>
-                    </li>
-                    <li className="flex items-start">
-                      <span className="mr-2 flex-shrink-0 text-lg">🐪</span>
-                      <span>Camel Pose (Ustrasana)</span>
-                    </li>
+                <h3 className="text-base md:text-lg font-semibold text-gray-800">Pick a Pose to Practice</h3>
+                <div className="max-h-64 md:max-h-96 overflow-y-auto mt-2">
+                  <ul className="grid grid-cols-3 gap-2">
+                    {posesData.map((p, idx) => (
+                      <li key={p.name} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
+                        <div className={`p-1 rounded-md border ${selectedPoseIndex === idx ? 'border-purple-500' : 'border-transparent'} hover:shadow-lg`}>
+                          <img src={p.image} alt={p.name} className="w-full h-20 object-cover rounded-md" />
+                          <div className="text-xs text-center mt-1">{p.name}</div>
+                        </div>
+                      </li>
+                    ))}
                   </ul>
                 </div>
               </div>
@@ -757,7 +696,7 @@ const YogaPoseDetector: React.FC = () => {
 
         <div className="mt-4 md:mt-8 text-center text-gray-600">
           <p className="text-xs md:text-sm">
-            Built with TensorFlow.js MoveNet • Real-time AI Pose Detection
+            Built with MediaPipe Pose Landmarker • Real-time pose tracking
           </p>
         </div>
       </div>
