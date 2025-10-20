@@ -86,14 +86,18 @@ const YogaPoseDetector: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Load poses JSON
+  // Load poses JSON and filter out unknown pose
   useEffect(() => {
     const loadPoses = async () => {
       try {
         const res = await fetch(POSES_JSON_PATH);
         if (!res.ok) throw new Error('Failed to fetch poses JSON');
         const data = await res.json();
-        setPosesData(data);
+        // Filter out any pose that contains "unknown" in the name (case insensitive)
+        const filteredData = data.filter((pose: PoseDataItem) =>
+          !pose.name.toLowerCase().includes('unknown')
+        );
+        setPosesData(filteredData);
       } catch (e) {
         console.error(e);
         setError(prev => prev ? prev : 'Failed to load poses data.');
@@ -600,8 +604,12 @@ const YogaPoseDetector: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-3 md:p-8">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-3 sm:mb-4 md:mb-8">
-          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-1 md:mb-2">Yoga Pose Trainer</h1>
-          <p className="text-xs sm:text-sm md:text-base lg:text-lg text-gray-600 px-2">Pick a pose below and match it – MediaPipe powers live tracking.</p>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-1 md:mb-2">
+            Nannu's Yoga Pose Trainer 🧘
+          </h1>
+          <p className="text-xs sm:text-sm md:text-base lg:text-lg text-gray-600 px-2">
+            Join Nannu and pick a pose below to match – MediaPipe powers live tracking!
+          </p>
         </div>
 
         {isLoading && (
@@ -621,7 +629,7 @@ const YogaPoseDetector: React.FC = () => {
         {isModelLoaded && !isCameraOn && !error && (
           <div className="bg-green-100 border border-green-400 text-green-700 px-2 py-2 sm:px-3 sm:py-2 md:px-4 md:py-3 rounded-lg mb-2 sm:mb-3 md:mb-4 flex items-center justify-center">
             <CheckCircle2 className="mr-2 flex-shrink-0" size={16} />
-            <span className="text-xs sm:text-sm md:text-base">Model ready – Start Camera!</span>
+            <span className="text-xs sm:text-sm md:text-base">Model ready – Nannu is waiting! Start Camera! 🎉</span>
           </div>
         )}
 
@@ -644,22 +652,37 @@ const YogaPoseDetector: React.FC = () => {
                 )}
               </div>
 
-              <div className="mt-3 md:mt-4 flex flex-col sm:flex-row gap-2 md:gap-3 justify-center">
-                <button onClick={() => startCamera()} disabled={!isModelLoaded || isCameraOn || isCameraLoading} className="px-4 md:px-6 py-2 md:py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base">
-                  <Camera size={18} />
-                  {isCameraLoading ? 'Starting...' : 'Start Camera'}
-                </button>
-                <button onClick={switchCamera} disabled={!isCameraOn} className="px-4 md:px-6 py-2 md:py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base">
-                  <SwitchCamera size={18} />
-                  Switch
-                </button>
-                <button onClick={() => setSoundEnabled(!soundEnabled)} className={`px-4 md:px-6 py-2 md:py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 text-sm md:text-base ${soundEnabled ? 'bg-purple-500 hover:bg-purple-600 text-white' : 'bg-gray-400 hover:bg-gray-500 text-white'}`}>
-                  {soundEnabled ? '🔊' : '🔇'}
-                  {soundEnabled ? 'Sound ON' : 'Sound OFF'}
-                </button>
-                <button onClick={stopCamera} disabled={!isCameraOn} className="px-4 md:px-6 py-2 md:py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm md:text-base">
-                  Stop Camera
-                </button>
+              <div className="mt-3 md:mt-4 space-y-2">
+                <div className="flex flex-col sm:flex-row gap-2 md:gap-3 justify-center">
+                  <button onClick={() => startCamera()} disabled={!isModelLoaded || isCameraOn || isCameraLoading} className="px-4 md:px-6 py-2 md:py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base">
+                    <Camera size={18} />
+                    {isCameraLoading ? 'Starting...' : 'Start Camera'}
+                  </button>
+                  <button onClick={switchCamera} disabled={!isCameraOn} className="px-4 md:px-6 py-2 md:py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 text-sm md:text-base">
+                    <SwitchCamera size={18} />
+                    Switch
+                  </button>
+                  <button onClick={() => setSoundEnabled(!soundEnabled)} className={`px-4 md:px-6 py-2 md:py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 text-sm md:text-base ${soundEnabled ? 'bg-purple-500 hover:bg-purple-600 text-white' : 'bg-gray-400 hover:bg-gray-500 text-white'}`}>
+                    {soundEnabled ? '🔊' : '🔇'}
+                    {soundEnabled ? 'Sound ON' : 'Sound OFF'}
+                  </button>
+                  <button onClick={stopCamera} disabled={!isCameraOn} className="px-4 md:px-6 py-2 md:py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm md:text-base">
+                    Stop Camera
+                  </button>
+                </div>
+                <div className="flex gap-2 justify-center items-center">
+                  <button onClick={handleZoomOut} disabled={!isCameraOn || zoom <= 0.5} className="px-3 py-2 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-sm">
+                    <ZoomOut size={16} />
+                    Zoom Out
+                  </button>
+                  <button onClick={resetZoom} disabled={!isCameraOn || zoom === 1} className="px-3 py-2 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm">
+                    Reset ({zoom.toFixed(1)}x)
+                  </button>
+                  <button onClick={handleZoomIn} disabled={!isCameraOn || zoom >= 2} className="px-3 py-2 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-sm">
+                    <ZoomIn size={16} />
+                    Zoom In
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -729,11 +752,11 @@ const YogaPoseDetector: React.FC = () => {
                     <div className="mt-2 text-center">
                       {currentPose.toLowerCase().includes(posesData[selectedPoseIndex].name.toLowerCase().split('(')[0].trim().toLowerCase()) ? (
                         <div className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-green-600">
-                          ✓ Match! Keep holding the pose
+                          ✓ Great job! Nannu is proud! 🌟
                         </div>
                       ) : (
                         <div className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-orange-600">
-                          ⚠ Different pose detected
+                          ⚠ Different pose – Keep trying!
                         </div>
                       )}
                     </div>
@@ -742,13 +765,13 @@ const YogaPoseDetector: React.FC = () => {
                   <p className="mt-2 text-xs text-gray-600 leading-tight text-center">
                     {selectedPoseIndex !== null && posesData[selectedPoseIndex]
                       ? posesData[selectedPoseIndex].description
-                      : 'Select a pose below to practice.'}
+                      : 'Select a pose below to practice with Nannu!'}
                   </p>
                 </div>
               </div>
 
               <div className="space-y-2 sm:space-y-3 md:space-y-4">
-                <h3 className="text-sm sm:text-base md:text-lg font-semibold text-gray-800">Pick a Pose</h3>
+                <h3 className="text-sm sm:text-base md:text-lg font-semibold text-gray-800">Pick a Pose 🎨</h3>
                 <div className="max-h-48 sm:max-h-64 md:max-h-96 overflow-y-auto">
                   <ul className="grid grid-cols-3 gap-1.5 sm:gap-2">
                     {posesData.map((p, idx) => (
@@ -767,7 +790,7 @@ const YogaPoseDetector: React.FC = () => {
 
               <div className="mt-3 sm:mt-4 md:mt-6 p-2 sm:p-3 md:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-xs text-gray-600 leading-tight">
-                  <strong>Tip:</strong> Good lighting and full body visibility help with better pose detection!
+                  <strong>Nannu's Tip:</strong> Good lighting and full body visibility help with better pose detection! 💡
                 </p>
               </div>
             </div>
@@ -776,7 +799,7 @@ const YogaPoseDetector: React.FC = () => {
 
         <div className="mt-3 sm:mt-4 md:mt-8 text-center text-gray-600">
           <p className="text-xs md:text-sm">
-            Built with MediaPipe Pose Landmarker • Real-time tracking
+            Built with MediaPipe Pose Landmarker • Real-time tracking • Made for Nannu 🎈
           </p>
         </div>
       </div>
@@ -785,4 +808,3 @@ const YogaPoseDetector: React.FC = () => {
 };
 
 export default YogaPoseDetector;
-
