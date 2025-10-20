@@ -605,10 +605,10 @@ const YogaPoseDetector: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-3 sm:mb-4 md:mb-8">
           <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-1 md:mb-2">
-            Nannu's Yoga Pose Trainer 🧘
+            Yoga Pose Trainer
           </h1>
           <p className="text-xs sm:text-sm md:text-base lg:text-lg text-gray-600 px-2">
-            Join Nannu and pick a pose below to match – MediaPipe powers live tracking!
+            Join <b>Nannu</b> and pick a pose below to match – MediaPipe powers live tracking!
           </p>
         </div>
 
