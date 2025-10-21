@@ -148,7 +148,11 @@ const YogaPoseDetector: React.FC = () => {
     setConfidence(0);
     setLastDetectedPose('');
     lastKeypointsRef.current = [];
-    poseSmootherRef.current.reset();
+
+    if(poseSmootherRef.current){
+        poseSmootherRef.current.reset();
+    }
+
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -215,17 +219,15 @@ const YogaPoseDetector: React.FC = () => {
     }
   };
 
-  // Angle calculation
-  const calculateAngle = (a: Keypoint, b: Keypoint, c: Keypoint): number => {
-    const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-    let angle = Math.abs((radians * 180) / Math.PI);
-    if (angle > 180) angle = 360 - angle;
-    return angle;
-  };
 
  const classifyPose = (keypoints: Keypoint[]): PoseClassification => {
    if (!keypoints || keypoints.length < 17 || posesData.length === 0) {
      return { pose: 'Unknown', confidence: 0 };
+   }
+
+   const visibleKeypoints = keypoints.filter(kp => (kp.score ?? 0) > 0.3);
+   if(visibleKeypoints.length < 15){
+    return {pose: 'Unknown', confidence: 0}
    }
 
    const normalizedUserPose = normalizeKeypoints(keypoints);
@@ -249,11 +251,11 @@ const YogaPoseDetector: React.FC = () => {
    }
 
    // Optional: apply a confidence threshold
-   if (bestScore < 0.55) {
+   if (bestScore < 0.5) {
      return { pose: 'Unknown', confidence: bestScore };
    }
 
-   const scaledConfidence = Math.min(1, (bestScore - 0.55 ) *2 +0.55);
+   const scaledConfidence = Math.min(1, (bestScore - 0.5 ) *2 +0.5);
 
    return {
     pose: bestMatch.pose,
@@ -452,7 +454,7 @@ const YogaPoseDetector: React.FC = () => {
 
   // Target pose image (selected by user)
   useEffect(() => {
-    if( poseSmootherRef.current){
+    if(poseSmootherRef.current){
         poseSmootherRef.current.reset();
     }
     if (!imageDivRef.current) return;
@@ -689,7 +691,7 @@ const YogaPoseDetector: React.FC = () => {
                 <div className="max-h-48 sm:max-h-64 md:max-h-96 overflow-y-auto">
                   <ul className="grid grid-cols-3 gap-1.5 sm:gap-2">
                     {posesData.map((p, idx) => (
-                      <li key={`{p.name}-${idx}`} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
+                      <li key={`${p.name}-${idx}`} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
                         <div className={`p-0.5 sm:p-1 rounded-md border-2 ${selectedPoseIndex === idx ? 'border-purple-500' : 'border-transparent'} hover:shadow-lg transition-all`}>
                           <div className="w-full h-16 sm:h-20 bg-pink-50 rounded-md flex items-center justify-center overflow-hidden">
                             <img src={p.image} alt={p.name} className="w-full h-full object-contain" />
