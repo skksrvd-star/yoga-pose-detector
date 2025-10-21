@@ -291,6 +291,14 @@ export class PoseDetectionSmoother {
   private maxHistoryLength = 10;
   private consistencyThreshold = 0.4; // 40% of frames must match
 
+   constructor(options: {
+    maxHistoryLength?: number;
+    consistencyThreshold?: number
+   } = {}){
+    this.maxHistoryLength = options.maxHistoryLength ?? 10;
+    this.consistencyThreshold = options.consistencyThreshold ?? 0.4
+   }
+
   /**
    * Add a new pose detection to the history
    * @param detection Object with pose name and confidence score
