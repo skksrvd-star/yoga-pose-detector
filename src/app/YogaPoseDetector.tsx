@@ -638,7 +638,7 @@ const YogaPoseDetector: React.FC = () => {
                 <div className="max-h-48 sm:max-h-64 md:max-h-96 overflow-y-auto">
                   <ul className="grid grid-cols-3 gap-1.5 sm:gap-2">
                     {posesData.map((p, idx) => (
-                      <li key={p.name} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
+                      <li key={`{p.name}-${idx}`} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
                         <div className={`p-0.5 sm:p-1 rounded-md border-2 ${selectedPoseIndex === idx ? 'border-purple-500' : 'border-transparent'} hover:shadow-lg transition-all`}>
                           <div className="w-full h-16 sm:h-20 bg-pink-50 rounded-md flex items-center justify-center overflow-hidden">
                             <img src={p.image} alt={p.name} className="w-full h-full object-contain" />
