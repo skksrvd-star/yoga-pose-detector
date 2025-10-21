@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, AlertCircle, CheckCircle2, Loader2, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
-
+import { normalizeKeypoints, calculatePoseSimilarity} from './poseHelpers';
 type Keypoint = {
   x: number;
   y: number;
@@ -228,171 +228,39 @@ const YogaPoseDetector: React.FC = () => {
     return angle;
   };
 
-  const classifyPose = (kps: Keypoint[]): PoseClassification => {
-    if (!kps || kps.length < 17) return { pose: 'Unknown', confidence: 0 };
+ const classifyPose = (keypoints: Keypoint[]): PoseClassification => {
+   if (!keypoints || keypoints.length < 17 || posesData.length === 0) {
+     return { pose: 'Unknown', confidence: 0 };
+   }
 
-    const kp = (idx: number) => kps[idx] ?? { x: 0, y: 0, score: 0 };
+   const normalizedUserPose = normalizeKeypoints(keypoints);
 
-    const nose = kp(0);
-    const leftShoulder = kp(11);
-    const rightShoulder = kp(12);
-    const leftElbow = kp(13);
-    const rightElbow = kp(14);
-    const leftWrist = kp(15);
-    const rightWrist = kp(16);
-    const leftHip = kp(23);
-    const rightHip = kp(24);
-    const leftKnee = kp(25);
-    const rightKnee = kp(26);
-    const leftAnkle = kp(27);
-    const rightAnkle = kp(28);
+   let bestMatch = { pose: 'Unknown', confidence: 0 };
+   let bestScore = 0;
 
-    // STRICT validation for body parts
-    const criticalBodyParts = [leftShoulder, rightShoulder, leftHip, rightHip];
-    const limbParts = [leftElbow, rightElbow, leftWrist, rightWrist,
-                       leftKnee, rightKnee, leftAnkle, rightAnkle];
+   for (const pose of posesData) {
+     if (!pose.keypoints || pose.keypoints.length < 17) continue;
 
-    const criticalScores = criticalBodyParts.map(k => k.score ?? 0);
-    const criticalVisible = criticalScores.filter(s => s > 0.6).length;
-    const avgCriticalScore = criticalScores.reduce((a, b) => a + b, 0) / 4;
+     const normalizedReference = normalizeKeypoints(pose.keypoints);
+     const similarity = calculatePoseSimilarity(normalizedUserPose, normalizedReference);
 
-    if (criticalVisible < 4 || avgCriticalScore < 0.6) {
-      return { pose: 'Unknown', confidence: 0 };
-    }
+     if (similarity > bestScore) {
+       bestScore = similarity;
+       bestMatch = {
+         pose: pose.name,
+         confidence: similarity
+       };
+     }
+   }
 
-    // Sanity check: shoulders above hips
-    const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
-    const hipY = (leftHip.y + rightHip.y) / 2;
-    if (shoulderY >= hipY - 20) {
-      return { pose: 'Unknown', confidence: 0 };
-    }
+   // Optional: apply a confidence threshold
+   if (bestScore < 0.5) {
+     return { pose: 'Unknown', confidence: bestScore };
+   }
 
-    // Check body proportions
-    const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
-    const hipWidth = Math.abs(leftHip.x - rightHip.x);
-    if (shoulderWidth < 30 || hipWidth < 20 || shoulderWidth > 800) {
-      return { pose: 'Unknown', confidence: 0 };
-    }
+   return bestMatch;
+ };
 
-    // Need limbs visible
-    const limbScores = limbParts.map(k => k.score ?? 0);
-    const visibleLimbs = limbScores.filter(s => s > 0.5).length;
-
-    if (visibleLimbs < 4) {
-      return { pose: 'Unknown', confidence: 0 };
-    }
-
-    const allScores = [...criticalScores, ...limbScores].filter(s => s > 0.4);
-    const avgConfidence = allScores.length > 0
-      ? allScores.reduce((a, b) => a + b, 0) / allScores.length
-      : 0;
-
-    if (avgConfidence < 0.6) {
-      return { pose: 'Unknown', confidence: 0 };
-    }
-
-    const isVisible = (k: Keypoint, t = 0.3) => (k.score ?? 0) > t;
-
-    const leftArmAngle = calculateAngle(leftShoulder, leftElbow, leftWrist);
-    const rightArmAngle = calculateAngle(rightShoulder, rightElbow, rightWrist);
-    const leftLegAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
-    const rightLegAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
-    const leftHipAngle = calculateAngle(leftShoulder, leftHip, leftKnee);
-    const rightHipAngle = calculateAngle(rightShoulder, rightHip, rightKnee);
-
-    const hipCenterY = (leftHip.y + rightHip.y) / 2;
-    const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
-
-    // Standing
-    if (leftLegAngle > 150 && rightLegAngle > 150) {
-      if (leftWrist.y < leftShoulder.y - 50 && rightWrist.y < rightShoulder.y - 50) {
-        return { pose: 'Mountain Pose - Arms Up (Tadasana)', confidence: avgConfidence };
-      }
-      if (Math.abs(leftWrist.y - leftShoulder.y) < 40 && Math.abs(rightWrist.y - rightShoulder.y) < 40) {
-        return { pose: 'T-Pose / Extended Mountain', confidence: avgConfidence };
-      }
-      return { pose: 'Mountain Pose (Tadasana)', confidence: avgConfidence };
-    }
-
-    // Tree Pose
-    if ((leftLegAngle > 140 && rightKnee.y < rightHip.y - 40) ||
-        (rightLegAngle > 140 && leftKnee.y < leftHip.y - 40)) {
-      return { pose: 'Tree Pose (Vrksasana)', confidence: avgConfidence };
-    }
-
-    // Chair Pose
-    if (leftLegAngle < 120 && rightLegAngle < 120 && leftLegAngle > 60 && rightLegAngle > 60) {
-      if (leftWrist.y < leftShoulder.y - 40 && rightWrist.y < rightShoulder.y - 40) {
-        return { pose: 'Chair Pose (Utkatasana)', confidence: avgConfidence };
-      }
-    }
-
-    // Warrior poses
-    if ((leftLegAngle < 130 && rightLegAngle > 140) || (rightLegAngle < 130 && leftLegAngle > 140)) {
-      if (leftWrist.y < leftShoulder.y - 60 && rightWrist.y < rightShoulder.y - 60) {
-        return { pose: 'Warrior I (Virabhadrasana I)', confidence: avgConfidence };
-      }
-      const leftArmHorizontal = Math.abs(leftWrist.y - leftShoulder.y) < 50;
-      const rightArmHorizontal = Math.abs(rightWrist.y - rightShoulder.y) < 50;
-      if (leftArmHorizontal && rightArmHorizontal) {
-        return { pose: 'Warrior II (Virabhadrasana II)', confidence: avgConfidence };
-      }
-      return { pose: 'Warrior I (Virabhadrasana I)', confidence: avgConfidence };
-    }
-
-    // Plank
-    const torsoAngle = Math.abs(
-      Math.atan2(leftHip.y - leftShoulder.y, leftHip.x - leftShoulder.x) * 180 / Math.PI
-    );
-    if (torsoAngle < 40 && leftArmAngle > 140 && rightArmAngle > 140 &&
-        leftLegAngle > 140 && Math.abs(shoulderCenterY - hipCenterY) < 60) {
-      return { pose: 'Plank Pose (Phalakasana)', confidence: avgConfidence };
-    }
-
-    // Downward Dog
-    if (isVisible(leftElbow) && isVisible(rightElbow) && isVisible(leftHip)) {
-      const armsExtended = leftElbow.y > leftShoulder.y && rightElbow.y > rightShoulder.y;
-      const hipsUp = leftHip.y < leftShoulder.y - 20 && rightHip.y < rightShoulder.y - 20;
-      if (armsExtended && hipsUp && leftHipAngle < 140 && rightHipAngle < 140) {
-        return { pose: 'Downward Dog (Adho Mukha Svanasana)', confidence: avgConfidence };
-      }
-    }
-
-    // Child's Pose
-    if (leftKnee.y > leftHip.y + 20 && rightKnee.y > rightHip.y + 20 &&
-        shoulderCenterY > hipCenterY && nose.y > shoulderCenterY + 50) {
-      return { pose: "Child's Pose (Balasana)", confidence: avgConfidence };
-    }
-
-    // Bridge Pose
-    if (shoulderCenterY > hipCenterY + 50 && leftKnee.y > leftHip.y && rightKnee.y > rightHip.y &&
-        leftHipAngle > 120 && rightHipAngle > 120) {
-      return { pose: 'Bridge Pose (Setu Bandhasana)', confidence: avgConfidence };
-    }
-
-    // Standing Forward Bend
-    if (leftLegAngle > 150 && rightLegAngle > 150 &&
-        shoulderCenterY > hipCenterY + 80 && nose.y > hipCenterY) {
-      return { pose: 'Standing Forward Bend (Uttanasana)', confidence: avgConfidence };
-    }
-
-    // Triangle Pose
-    if (Math.abs(leftAnkle.x - rightAnkle.x) > 150 && leftLegAngle > 150 && rightLegAngle > 150) {
-      if (Math.abs(leftWrist.y - rightWrist.y) > 80) {
-        return { pose: 'Triangle Pose (Trikonasana)', confidence: avgConfidence };
-      }
-    }
-
-    // Cobra / Upward Dog
-    if (shoulderCenterY < hipCenterY - 30 && leftArmAngle < 150 && rightArmAngle < 150) {
-      return { pose: 'Cobra Pose (Bhujangasana)', confidence: avgConfidence };
-    }
-    if (shoulderCenterY < hipCenterY - 40 && leftArmAngle > 140 && rightArmAngle > 140) {
-      return { pose: 'Upward Dog (Urdhva Mukha Svanasana)', confidence: avgConfidence };
-    }
-
-    return { pose: 'Unknown Pose', confidence: avgConfidence };
-  };
 
   // Drawing skeleton
   const drawSkeleton = (keypoints: Keypoint[], detectedPose: string) => {
