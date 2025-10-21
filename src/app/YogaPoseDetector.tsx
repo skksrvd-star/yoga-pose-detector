@@ -253,7 +253,7 @@ const YogaPoseDetector: React.FC = () => {
      return { pose: 'Unknown', confidence: bestScore };
    }
 
-   const scaledConfidence = Math.mon(1, (bestScore - 0.55 ) *2 +0.55);
+   const scaledConfidence = Math.min(1, (bestScore - 0.55 ) *2 +0.55);
 
    return {
     pose: bestMatch.pose,
