@@ -1,12 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, AlertCircle, CheckCircle2, Loader2, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
-import { normalizeKeypoints, calculatePoseSimilarity} from './poseHelpers';
-type Keypoint = {
-  x: number;
-  y: number;
-  score?: number;
-  name?: string;
-};
+import { normalizeKeypoints, calculatePoseSimilarity, Keypoint} from './poseHelpers';
 
 interface PoseClassification {
   pose: string;
@@ -364,7 +358,8 @@ const YogaPoseDetector: React.FC = () => {
             x: (p.x ?? 0) * video.videoWidth,
             y: (p.y ?? 0) * video.videoHeight,
             score: p.visibility ?? 0.5,
-            name: `kp${i}`
+            name: `kp${i}`,
+            index: i
           }));
           lastKeypointsRef.current = keypoints;
 

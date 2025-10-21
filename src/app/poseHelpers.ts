@@ -1,9 +1,10 @@
 // Helper type for a pose keypoint
-type Keypoint = {
+export type Keypoint = {
   x: number;
   y: number;
   score?: number;
   name?: string;
+  index?:number;
 };
 
 // Normalize keypoints to 0–1 range for comparison
@@ -34,10 +35,10 @@ export const normalizeKeypoints = (keypoints: Keypoint[]): Keypoint[] => {
 
 export const calculatePoseSimilarity = (
   detectedKeypoints: Keypoint[],
-  referenceKeypoints: any[]
+  referenceKeypoints: Keypoint[]
 ): number => {
   if (!detectedKeypoints || !referenceKeypoints || referenceKeypoints.length === 0)
-    return Number.MAX_VALUE;
+    return 0;
 
   let totalDistance = 0;
   let keypointsUsed = 0;
@@ -45,6 +46,7 @@ export const calculatePoseSimilarity = (
 
   // Compare each reference keypoint to detected keypoint
   referenceKeypoints.forEach(refKp => {
+    const index = refKp.index !== undefined ? refKp.index : Number(refKp.name?.replace('kp','') ?? 0);
     const detectedKp = detectedKeypoints[refKp.index];
     if (!detectedKp || (detectedKp.score ?? 0) < 0.3) return;
 
@@ -62,9 +64,11 @@ export const calculatePoseSimilarity = (
 
   // Penalize if too few keypoints were matched
   if (keypointsUsed < Math.min(8, referenceKeypoints.length / 2)) {
-    return Number.MAX_VALUE;
+    return 0;
   }
 
-  // Return weighted average distance (lower is better)
-  return keypointsUsed > 0 ? totalDistance / totalConfidence : Number.MAX_VALUE;
+  const avgDistance = keypointsUsed >0 ? totalDistance/totalConfidence : Number.MAX_VALUE;
+  const similiarity = Math.max(0, 1 - avgDistance);
+
+  return similiarity ;
 };
