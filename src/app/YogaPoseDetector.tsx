@@ -42,7 +42,10 @@ const YogaPoseDetector: React.FC = () => {
 
   const [posesData, setPosesData] = useState<PoseDataItem[]>([]);
   const [selectedPoseIndex, setSelectedPoseIndex] = useState<number | null>(null);
-  const poseSmootherRef = useRef<PoseDetectionSmoother>(new PoseDetectionSmoother());
+  const poseSmootherRef = useRef<PoseDetectionSmoother>(new PoseDetectionSmoother({
+    maxHistoryLength: 8,
+    consistencyThreshold: 0.3
+  }));
   // Load model
   useEffect(() => {
     let cancelled = false;
