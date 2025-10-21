@@ -47,7 +47,7 @@ export const calculatePoseSimilarity = (
   // Compare each reference keypoint to detected keypoint
   referenceKeypoints.forEach(refKp => {
     const index = refKp.index !== undefined ? refKp.index : Number(refKp.name?.replace('kp','') ?? 0);
-    const detectedKp = detectedKeypoints[refKp.index];
+    const detectedKp = detectedKeypoints[index];
     if (!detectedKp || (detectedKp.score ?? 0) < 0.3) return;
 
     // Euclidean distance between normalized keypoints
