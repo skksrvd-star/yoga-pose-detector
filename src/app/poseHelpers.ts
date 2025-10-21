@@ -2,8 +2,8 @@
 type Keypoint = {
   x: number;
   y: number;
-  score: number;
-  name: string;
+  score?: number;
+  name?: string;
 };
 
 // Normalize keypoints to 0–1 range for comparison
@@ -28,7 +28,7 @@ export const normalizeKeypoints = (keypoints: Keypoint[]): Keypoint[] => {
     x: (kp.x - minX) / rangeX,
     y: (kp.y - minY) / rangeY,
     score: kp.score,
-    name: kp.name,
+    name: kp.name
   }));
 };
 
@@ -44,8 +44,8 @@ export const calculatePoseSimilarity = (
   let totalConfidence = 0;
 
   // Compare each reference keypoint to detected keypoint
-  referenceKeypoints.forEach((refKp, index) => {
-    const detectedKp = detectedKeypoints[index];
+  referenceKeypoints.forEach(refKp => {
+    const detectedKp = detectedKeypoints[refKp.index];
     if (!detectedKp || (detectedKp.score ?? 0) < 0.3) return;
 
     // Euclidean distance between normalized keypoints
