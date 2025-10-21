@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, AlertCircle, CheckCircle2, Loader2, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
-import { normalizeKeypoints, calculatePoseSimilarity, Keypoint} from './poseHelpers';
+import { normalizeKeypoints, calculatePoseSimilarity, Keypoint, extractAngles, PoseDetectionSmoother, ANGLE_PAIRS} from './poseHelpers';
 
 interface PoseClassification {
   pose: string;
@@ -42,7 +42,7 @@ const YogaPoseDetector: React.FC = () => {
 
   const [posesData, setPosesData] = useState<PoseDataItem[]>([]);
   const [selectedPoseIndex, setSelectedPoseIndex] = useState<number | null>(null);
-
+  const poseSmootherRef = useRef<PoseDetectionSmoother>(new PoseDetectionSmoother());
   // Load model
   useEffect(() => {
     let cancelled = false;
@@ -148,6 +148,7 @@ const YogaPoseDetector: React.FC = () => {
     setConfidence(0);
     setLastDetectedPose('');
     lastKeypointsRef.current = [];
+    poseSmootherRef.current.reset();
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -248,11 +249,16 @@ const YogaPoseDetector: React.FC = () => {
    }
 
    // Optional: apply a confidence threshold
-   if (bestScore < 0.5) {
+   if (bestScore < 0.55) {
      return { pose: 'Unknown', confidence: bestScore };
    }
 
-   return bestMatch;
+   const scaledConfidence = Math.mon(1, (bestScore - 0.55 ) *2 +0.55);
+
+   return {
+    pose: bestMatch.pose,
+    confidence: scaledConfidence
+   };
  };
 
 
@@ -304,6 +310,40 @@ const YogaPoseDetector: React.FC = () => {
       }
     }
 
+    if (isPoseDetected) {
+      const angles = extractAngles(keypoints);
+
+      for (const [name, [i1, i2, i3]] of Object.entries(ANGLE_PAIRS)) {
+        const kpA = keypoints[i1];
+        const kpB = keypoints[i2]; // The vertex of the angle
+        const kpC = keypoints[i3];
+
+        if (kpA && kpB && kpC &&
+            (kpA.score ?? 0) > 0.3 &&
+            (kpB.score ?? 0) > 0.3 &&
+            (kpC.score ?? 0) > 0.3) {
+
+          const angle = angles[name];
+
+          // Draw a circle at the joint vertex
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(kpB.x, kpB.y, 15, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          // Display angle value for major joints
+          if (angle !== undefined && ['leftElbow', 'rightElbow', 'leftKnee', 'rightKnee'].includes(name)) {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${Math.round(angle)}°`, kpB.x, kpB.y + 25);
+          }
+        }
+      }
+    }
     for (const k of keypoints) {
       if (!k) continue;
       if ((k.score ?? 1) > 0.2) {
@@ -363,7 +403,15 @@ const YogaPoseDetector: React.FC = () => {
           }));
           lastKeypointsRef.current = keypoints;
 
-          const { pose, confidence: conf } = classifyPose(keypoints);
+          const postAngles = extractAngles(keypoints);
+          const rawPoseReult = classifyPose(keypoints);
+          poseSmootherRef.current.addPoseDetection(rawPoseReult);
+          const smoothedResult = poseSmootherRef.current.getSmoothedPose();
+
+
+          const { pose, confidence: conf } = smoothedResult;
+
+
           setCurrentPose(pose);
           setConfidence(Math.round(conf * 100));
 
@@ -404,6 +452,9 @@ const YogaPoseDetector: React.FC = () => {
 
   // Target pose image (selected by user)
   useEffect(() => {
+    if( poseSmootherRef.current){
+        poseSmootherRef.current.reset();
+    }
     if (!imageDivRef.current) return;
 
     let imageUrl = '/poses/unknown-pose.jpg';
