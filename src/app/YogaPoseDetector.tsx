@@ -1033,7 +1033,7 @@ const YogaPoseDetector: React.FC = () => {
 
         <div className="mt-3 sm:mt-4 md:mt-8 text-center text-gray-600">
           <p className="text-xs md:text-sm">
-            Built with MediaPipe Pose Landmarker • Real-time tracking • Made for Nannu 🎈
+            Built with MediaPipe Pose Landmarker • Real-time tracking 🎈
           </p>
         </div>
       </div>
