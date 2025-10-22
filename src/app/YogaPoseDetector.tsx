@@ -1,6 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, AlertCircle, CheckCircle2, Loader2, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
-import { normalizeKeypoints, calculatePoseSimilarity, Keypoint, extractAngles, PoseDetectionSmoother, ANGLE_PAIRS} from './poseHelpers';
+
+type Keypoint = {
+  x: number;
+  y: number;
+  score?: number;
+  name?: string;
+};
 
 interface PoseClassification {
   pose: string;
@@ -42,10 +48,7 @@ const YogaPoseDetector: React.FC = () => {
 
   const [posesData, setPosesData] = useState<PoseDataItem[]>([]);
   const [selectedPoseIndex, setSelectedPoseIndex] = useState<number | null>(null);
-  const poseSmootherRef = useRef<PoseDetectionSmoother>(new PoseDetectionSmoother({
-    maxHistoryLength: 8,
-    consistencyThreshold: 0.3
-  }));
+
   // Load model
   useEffect(() => {
     let cancelled = false;
@@ -151,11 +154,6 @@ const YogaPoseDetector: React.FC = () => {
     setConfidence(0);
     setLastDetectedPose('');
     lastKeypointsRef.current = [];
-
-    if(poseSmootherRef.current){
-        poseSmootherRef.current.reset();
-    }
-
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -222,50 +220,413 @@ const YogaPoseDetector: React.FC = () => {
     }
   };
 
+  // Angle calculation
+  const calculateAngle = (a: Keypoint, b: Keypoint, c: Keypoint): number => {
+    const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+    let angle = Math.abs((radians * 180) / Math.PI);
+    if (angle > 180) angle = 360 - angle;
+    return angle;
+  };
 
- const classifyPose = (keypoints: Keypoint[]): PoseClassification => {
-   if (!keypoints || keypoints.length < 17 || posesData.length === 0) {
-     return { pose: 'Unknown', confidence: 0 };
-   }
+  const classifyPose = (kps: Keypoint[]): PoseClassification => {
+      if (!kps || kps.length < 17) return { pose: 'Unknown', confidence: 0 };
 
-   const visibleKeypoints = keypoints.filter(kp => (kp.score ?? 0) > 0.3);
-   if(visibleKeypoints.length < 15){
-    return {pose: 'Unknown', confidence: 0}
-   }
+      const kp = (idx: number) => kps[idx] ?? { x: 0, y: 0, score: 0 };
 
-   const normalizedUserPose = normalizeKeypoints(keypoints);
+      const nose = kp(0);
+      const leftEye = kp(1);
+      const rightEye = kp(2);
+      const leftEar = kp(3);
+      const rightEar = kp(4);
+      const leftShoulder = kp(11);
+      const rightShoulder = kp(12);
+      const leftElbow = kp(13);
+      const rightElbow = kp(14);
+      const leftWrist = kp(15);
+      const rightWrist = kp(16);
+      const leftHip = kp(23);
+      const rightHip = kp(24);
+      const leftKnee = kp(25);
+      const rightKnee = kp(26);
+      const leftAnkle = kp(27);
+      const rightAnkle = kp(28);
 
-   let bestMatch = { pose: 'Unknown', confidence: 0 };
-   let bestScore = 0;
+      const criticalBodyParts = [leftShoulder, rightShoulder, leftHip, rightHip];
+      const limbParts = [leftElbow, rightElbow, leftWrist, rightWrist, leftKnee, rightKnee, leftAnkle, rightAnkle];
 
-   for (const pose of posesData) {
-     if (!pose.keypoints || pose.keypoints.length < 17) continue;
+      const criticalScores = criticalBodyParts.map(k => k.score ?? 0);
+      const criticalVisible = criticalScores.filter(s => s > 0.5).length;
+      const avgCriticalScore = criticalScores.reduce((a, b) => a + b, 0) / 4;
 
-     const normalizedReference = normalizeKeypoints(pose.keypoints);
-     const similarity = calculatePoseSimilarity(normalizedUserPose, normalizedReference);
+      if (criticalVisible < 3 || avgCriticalScore < 0.5) {
+        return { pose: 'Unknown', confidence: 0 };
+      }
 
-     if (similarity > bestScore) {
-       bestScore = similarity;
-       bestMatch = {
-         pose: pose.name,
-         confidence: similarity
-       };
-     }
-   }
+      const limbScores = limbParts.map(k => k.score ?? 0);
+      const visibleLimbs = limbScores.filter(s => s > 0.4).length;
+      const allScores = [...criticalScores, ...limbScores].filter(s => s > 0.3);
+      const avgConfidence = allScores.length > 0 ? allScores.reduce((a, b) => a + b, 0) / allScores.length : 0;
 
-   // Optional: apply a confidence threshold
-   if (bestScore < 0.5) {
-     return { pose: 'Unknown', confidence: bestScore };
-   }
+      if (avgConfidence < 0.5) return { pose: 'Unknown', confidence: 0 };
 
-   const scaledConfidence = Math.min(1, (bestScore - 0.5 ) *2 +0.5);
+      const isVisible = (k: Keypoint, t = 0.3) => (k.score ?? 0) > t;
 
-   return {
-    pose: bestMatch.pose,
-    confidence: scaledConfidence
-   };
- };
+      // Calculate all angles
+      const leftArmAngle = calculateAngle(leftShoulder, leftElbow, leftWrist);
+      const rightArmAngle = calculateAngle(rightShoulder, rightElbow, rightWrist);
+      const leftLegAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
+      const rightLegAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
+      const leftHipAngle = calculateAngle(leftShoulder, leftHip, leftKnee);
+      const rightHipAngle = calculateAngle(rightShoulder, rightHip, rightKnee);
+      const leftShoulderAngle = calculateAngle(leftElbow, leftShoulder, leftHip);
+      const rightShoulderAngle = calculateAngle(rightElbow, rightShoulder, rightHip);
+      const leftKneeAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
+      const rightKneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
 
+      const hipCenterY = (leftHip.y + rightHip.y) / 2;
+      const hipCenterX = (leftHip.x + rightHip.x) / 2;
+      const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
+      const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
+      const ankleCenterY = (leftAnkle.y + rightAnkle.y) / 2;
+      const wristCenterY = (leftWrist.y + rightWrist.y) / 2;
+
+      const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x);
+      const hipWidth = Math.abs(leftHip.x - rightHip.x);
+      const ankleWidth = Math.abs(leftAnkle.x - rightAnkle.x);
+
+      const torsoAngle = Math.abs(Math.atan2(hipCenterY - shoulderCenterY, hipCenterX - shoulderCenterX) * 180 / Math.PI);
+
+      // INVERSIONS & ARM BALANCES
+      // Headstand - head at bottom, feet at top
+      if (nose.y > shoulderCenterY + 50 && ankleCenterY < shoulderCenterY - 80 && Math.abs(leftAnkle.x - rightAnkle.x) < 100) {
+        return { pose: 'Headstand', confidence: avgConfidence };
+      }
+
+      // Handstand - hands at bottom, body vertical
+      if (wristCenterY > shoulderCenterY + 20 && ankleCenterY < shoulderCenterY - 100 && leftLegAngle > 150 && rightLegAngle > 150) {
+        return { pose: 'Handstand', confidence: avgConfidence };
+      }
+
+      // Forearm Stand
+      if (leftElbow.y > leftShoulder.y + 30 && rightElbow.y > rightShoulder.y + 30 && ankleCenterY < shoulderCenterY - 80) {
+        return { pose: 'Forearm Stand', confidence: avgConfidence };
+      }
+
+      // Shoulder Stand
+      if (shoulderCenterY > hipCenterY + 80 && ankleCenterY < shoulderCenterY - 50 && leftLegAngle > 150 && rightLegAngle > 150) {
+        return { pose: 'Shoulder Stand', confidence: avgConfidence };
+      }
+
+      // Plow Pose
+      if (shoulderCenterY > hipCenterY + 60 && leftKnee.y < shoulderCenterY && rightKnee.y < shoulderCenterY) {
+        return { pose: 'Plow Pose', confidence: avgConfidence };
+      }
+
+      // Crow Pose - arms supporting body
+      if (leftElbow.y > leftShoulder.y && rightElbow.y > rightShoulder.y && leftKnee.y < leftHip.y && rightKnee.y < rightHip.y && Math.abs(leftAnkle.y - rightAnkle.y) < 100 && leftAnkle.y < leftHip.y) {
+        return { pose: 'Crow Pose', confidence: avgConfidence };
+      }
+
+      // Side Crow Pose
+      if (leftElbow.y > leftShoulder.y && Math.abs(leftKnee.x - leftElbow.x) < 80 && leftAnkle.y < leftHip.y) {
+        return { pose: 'Side Crow Pose', confidence: avgConfidence };
+      }
+
+      // Peacock Pose - body parallel to ground, on hands
+      if (Math.abs(shoulderCenterY - hipCenterY) < 40 && wristCenterY > shoulderCenterY && leftArmAngle < 100 && rightArmAngle < 100) {
+        return { pose: 'Peacock Pose', confidence: avgConfidence };
+      }
+
+      // Firefly Pose
+      if (leftWrist.y > leftShoulder.y && leftKnee.y < leftHip.y && leftAnkle.x > leftKnee.x + 80) {
+        return { pose: 'Firefly Pose', confidence: avgConfidence };
+      }
+
+      // STANDING BALANCE POSES
+      // Tree Pose
+      if ((leftLegAngle > 150 && rightKnee.y < rightHip.y - 30 && Math.abs(rightKnee.x - leftHip.x) < 50) ||
+          (rightLegAngle > 150 && leftKnee.y < leftHip.y - 30 && Math.abs(leftKnee.x - rightHip.x) < 50)) {
+        return { pose: 'Tree Pose', confidence: avgConfidence };
+      }
+
+      // Eagle Pose - legs and arms wrapped
+      if (((leftKnee.x < rightKnee.x - 20 && leftAnkle.x > rightAnkle.x + 20) || (rightKnee.x < leftKnee.x - 20 && rightAnkle.x > leftAnkle.x + 20)) &&
+          ((leftElbow.x > rightElbow.x && leftWrist.x < rightWrist.x) || (rightElbow.x > leftElbow.x && rightWrist.x < leftWrist.x))) {
+        return { pose: 'Eagle Pose', confidence: avgConfidence };
+      }
+
+      // Dancer Pose - one leg lifted back
+      if ((leftLegAngle > 150 && rightAnkle.y < rightHip.y - 40 && rightKnee.y < rightHip.y) ||
+          (rightLegAngle > 150 && leftAnkle.y < leftHip.y - 40 && leftKnee.y < leftHip.y)) {
+        if ((leftWrist.y < leftHip.y && rightWrist.y > rightHip.y + 50) || (rightWrist.y < rightHip.y && leftWrist.y > leftHip.y + 50)) {
+          return { pose: 'King Dancer Pose', confidence: avgConfidence };
+        }
+        return { pose: 'Dancer Pose', confidence: avgConfidence };
+      }
+
+      // Half Moon Pose
+      if ((leftLegAngle > 150 && rightLegAngle > 150 && Math.abs(rightAnkle.x - leftAnkle.x) > 100 && torsoAngle > 60) ||
+          (torsoAngle > 60 && Math.abs(leftWrist.y - rightWrist.y) > 120)) {
+        return { pose: 'Half Moon Pose', confidence: avgConfidence };
+      }
+
+      // Standing Split
+      if ((leftLegAngle > 150 && rightAnkle.y < shoulderCenterY - 80) || (rightLegAngle > 150 && leftAnkle.y < shoulderCenterY - 80)) {
+        return { pose: 'Standing Split', confidence: avgConfidence };
+      }
+
+      // Warrior III
+      if ((leftLegAngle > 150 && rightLegAngle > 150 && Math.abs(rightAnkle.y - shoulderCenterY) < 80 && rightAnkle.x > rightHip.x + 50) ||
+          (rightLegAngle > 150 && leftLegAngle > 150 && Math.abs(leftAnkle.y - shoulderCenterY) < 80 && leftAnkle.x > leftHip.x + 50)) {
+        return { pose: 'Warrior III', confidence: avgConfidence };
+      }
+
+      // STANDING POSES
+      // Chair Pose
+      if (leftKneeAngle < 120 && rightKneeAngle < 120 && leftKneeAngle > 60 && rightKneeAngle > 60 && ankleWidth < 80) {
+        if (wristCenterY < shoulderCenterY - 40) {
+          return { pose: 'Chair Pose', confidence: avgConfidence };
+        }
+      }
+
+      // Warrior I
+      if ((leftKneeAngle < 130 && rightLegAngle > 150 && ankleWidth > 100) || (rightKneeAngle < 130 && leftLegAngle > 150 && ankleWidth > 100)) {
+        if (wristCenterY < shoulderCenterY - 50) {
+          return { pose: 'Warrior I', confidence: avgConfidence };
+        }
+      }
+
+      // Warrior II
+      if ((leftKneeAngle < 130 && rightLegAngle > 150) || (rightKneeAngle < 130 && leftLegAngle > 150)) {
+        if (Math.abs(leftWrist.y - leftShoulder.y) < 50 && Math.abs(rightWrist.y - rightShoulder.y) < 50 && Math.abs(leftWrist.x - rightWrist.x) > 150) {
+          return { pose: 'Warrior II', confidence: avgConfidence };
+        }
+      }
+
+      // Triangle Pose
+      if (ankleWidth > 150 && leftLegAngle > 150 && rightLegAngle > 150 && Math.abs(leftWrist.y - rightWrist.y) > 100) {
+        if (torsoAngle > 50) {
+          return { pose: 'Revolved Triangle Pose', confidence: avgConfidence };
+        }
+        return { pose: 'Triangle Pose', confidence: avgConfidence };
+      }
+
+      // Wide-Legged Forward Bend
+      if (ankleWidth > 150 && shoulderCenterY > hipCenterY + 60 && nose.y > hipCenterY) {
+        return { pose: 'Wide-Legged Forward Bend', confidence: avgConfidence };
+      }
+
+      // Standing Forward Bend
+      if (leftLegAngle > 150 && rightLegAngle > 150 && shoulderCenterY > hipCenterY + 80 && nose.y > hipCenterY + 40) {
+        return { pose: 'Standing Forward Bend', confidence: avgConfidence };
+      }
+
+      // Intense Side Stretch
+      if (leftLegAngle > 150 && rightLegAngle > 150 && ankleWidth > 60 && shoulderCenterY > hipCenterY + 50) {
+        return { pose: 'Intense Side Stretch', confidence: avgConfidence };
+      }
+
+      // Garland Pose (deep squat)
+      if (leftKneeAngle < 80 && rightKneeAngle < 80 && hipCenterY > ankleCenterY - 80 && Math.abs(leftWrist.x - rightWrist.x) < 60 && wristCenterY > shoulderCenterY) {
+        return { pose: 'Garland Pose', confidence: avgConfidence };
+      }
+
+      // Mountain Pose
+      if (leftLegAngle > 150 && rightLegAngle > 150 && ankleWidth < 80) {
+        if (wristCenterY < shoulderCenterY - 50) {
+          return { pose: 'Mountain Pose', confidence: avgConfidence };
+        }
+        if (Math.abs(leftWrist.y - leftShoulder.y) < 40 && Math.abs(rightWrist.y - rightShoulder.y) < 40 && Math.abs(leftWrist.x - rightWrist.x) > 120) {
+          return { pose: 'Mountain Pose', confidence: avgConfidence };
+        }
+        return { pose: 'Mountain Pose', confidence: avgConfidence };
+      }
+
+      // LUNGES
+      // High Lunge
+      if ((leftKneeAngle < 120 && rightLegAngle > 150) || (rightKneeAngle < 120 && leftLegAngle > 150)) {
+        if (wristCenterY < shoulderCenterY - 40) {
+          return { pose: 'High Lunge', confidence: avgConfidence };
+        }
+      }
+
+      // Low Lunge
+      if ((leftKnee.y > leftHip.y + 30 && rightKneeAngle < 120) || (rightKnee.y > rightHip.y + 30 && leftKneeAngle < 120)) {
+        return { pose: 'Low Lunge', confidence: avgConfidence };
+      }
+
+      // FLOOR POSES - PRONE (face down)
+      // Cobra Pose
+      if (shoulderCenterY < hipCenterY - 20 && leftArmAngle < 150 && rightArmAngle < 150 && nose.y < shoulderCenterY) {
+        return { pose: 'Cobra Pose', confidence: avgConfidence };
+      }
+
+      // Upward Dog
+      if (shoulderCenterY < hipCenterY - 30 && leftArmAngle > 150 && rightArmAngle > 150 && nose.y < shoulderCenterY) {
+        return { pose: 'Upward Dog', confidence: avgConfidence };
+      }
+
+      // Bow Pose
+      if (shoulderCenterY < hipCenterY && leftKneeAngle < 100 && rightKneeAngle < 100 && leftAnkle.y < leftHip.y && rightAnkle.y < rightHip.y && leftWrist.y < leftShoulder.y) {
+        return { pose: 'Bow Pose', confidence: avgConfidence };
+      }
+
+      // Locust Pose
+      if (shoulderCenterY < hipCenterY && leftLegAngle > 160 && rightLegAngle > 160 && ankleCenterY < hipCenterY - 20) {
+        return { pose: 'Locust Pose', confidence: avgConfidence };
+      }
+
+      // Half Frog Pose
+      if (shoulderCenterY < hipCenterY && (leftKneeAngle < 90 || rightKneeAngle < 90) && (leftAnkle.y < leftHip.y - 20 || rightAnkle.y < rightHip.y - 20)) {
+        if (leftKneeAngle < 90 && rightKneeAngle < 90) {
+          return { pose: 'Full Frog Pose', confidence: avgConfidence };
+        }
+        return { pose: 'Half Frog Pose', confidence: avgConfidence };
+      }
+
+      // FLOOR POSES - SUPINE (face up)
+      // Bridge Pose
+      if (shoulderCenterY > hipCenterY + 40 && leftKnee.y > leftHip.y && rightKnee.y > rightHip.y && leftKneeAngle < 120 && rightKneeAngle < 120) {
+        return { pose: 'Bridge Pose', confidence: avgConfidence };
+      }
+
+      // Fish Pose
+      if (shoulderCenterY > hipCenterY + 20 && nose.y > shoulderCenterY + 40 && leftLegAngle > 160 && rightLegAngle > 160) {
+        return { pose: 'Fish Pose', confidence: avgConfidence };
+      }
+
+      // Happy Baby Pose
+      if (shoulderCenterY > hipCenterY - 20 && leftKnee.y < leftHip.y && rightKnee.y < rightHip.y && leftKneeAngle < 90 && rightKneeAngle < 90 && leftAnkle.y < leftKnee.y && rightAnkle.y < rightKnee.y) {
+        return { pose: 'Happy Baby Pose', confidence: avgConfidence };
+      }
+
+      // Corpse Pose
+      if (Math.abs(shoulderCenterY - hipCenterY) < 50 && leftLegAngle > 160 && rightLegAngle > 160 && leftArmAngle > 160 && rightArmAngle > 160) {
+        return { pose: 'Corpse Pose', confidence: avgConfidence };
+      }
+
+      // Reclined Pigeon Pose
+      if (shoulderCenterY > hipCenterY - 40 && ((leftAnkle.x > rightKnee.x - 30 && leftAnkle.y < rightKnee.y + 30) || (rightAnkle.x > leftKnee.x - 30 && rightAnkle.y < leftKnee.y + 30))) {
+        return { pose: 'Reclined Pigeon Pose', confidence: avgConfidence };
+      }
+
+      // KNEELING & ALL-FOURS
+      // Cat Pose
+      if (leftKnee.y > leftHip.y + 20 && rightKnee.y > rightHip.y + 20 && shoulderCenterY > hipCenterY - 30 && hipCenterY < shoulderCenterY + 30) {
+        if (shoulderCenterY < hipCenterY - 10) {
+          return { pose: 'Cat Pose', confidence: avgConfidence };
+        }
+        return { pose: 'Cow Pose', confidence: avgConfidence };
+      }
+
+      // Child's Pose
+      if (leftKnee.y > leftHip.y + 30 && rightKnee.y > rightHip.y + 30 && shoulderCenterY > hipCenterY + 20 && nose.y > shoulderCenterY + 30) {
+        return { pose: "Child's Pose", confidence: avgConfidence };
+      }
+
+      // Camel Pose - kneeling backbend
+      if (leftKnee.y > leftHip.y + 20 && rightKnee.y > rightHip.y + 20 && shoulderCenterY < hipCenterY - 20 && wristCenterY > hipCenterY + 20) {
+        return { pose: 'Camel Pose', confidence: avgConfidence };
+      }
+
+      // Pigeon Pose
+      if ((leftKnee.y > leftHip.y && rightLegAngle > 150 && Math.abs(leftKnee.x - leftHip.x) < 80) ||
+          (rightKnee.y > rightHip.y && leftLegAngle > 150 && Math.abs(rightKnee.x - rightHip.x) < 80)) {
+        return { pose: 'Pigeon Pose', confidence: avgConfidence };
+      }
+
+      // PLANK VARIATIONS
+      // Side Plank
+      if (Math.abs(torsoAngle - 90) < 30 && (leftArmAngle > 150 || rightArmAngle > 150) && Math.abs(leftAnkle.x - rightAnkle.x) < 60) {
+        return { pose: 'Side Plank', confidence: avgConfidence };
+      }
+
+      // Plank Pose
+      if (torsoAngle < 30 && leftArmAngle > 150 && rightArmAngle > 150 && leftLegAngle > 150 && rightLegAngle > 150 && Math.abs(shoulderCenterY - hipCenterY) < 50) {
+        return { pose: 'Plank Pose', confidence: avgConfidence };
+      }
+
+      // Downward Dog
+      if (leftElbow.y > leftShoulder.y + 30 && rightElbow.y > rightShoulder.y + 30 && hipCenterY < shoulderCenterY - 40 && leftHipAngle < 140 && rightHipAngle < 140) {
+        return { pose: 'Downward Dog', confidence: avgConfidence };
+      }
+
+      // SEATED POSES
+      // Boat Pose
+      if (hipCenterY < ankleCenterY && hipCenterY < shoulderCenterY && leftLegAngle > 140 && rightLegAngle > 140 && leftKnee.y < leftHip.y) {
+        return { pose: 'Boat Pose', confidence: avgConfidence };
+      }
+
+      // Staff Pose
+      if (leftLegAngle > 160 && rightLegAngle > 160 && Math.abs(shoulderCenterY - hipCenterY) < 40 && ankleCenterY > hipCenterY + 80) {
+        return { pose: 'Staff Pose', confidence: avgConfidence };
+      }
+
+      // Seated Forward Bend
+      if (leftLegAngle > 150 && rightLegAngle > 150 && shoulderCenterY > hipCenterY + 30 && nose.y > hipCenterY + 40) {
+        return { pose: 'Seated Forward Bend', confidence: avgConfidence };
+      }
+
+      // Head to Knee Pose
+      if ((leftLegAngle > 150 && rightKneeAngle < 100) || (rightLegAngle > 150 && leftKneeAngle < 100)) {
+        if (shoulderCenterY > hipCenterY + 30) {
+          return { pose: 'Head to Knee Pose', confidence: avgConfidence };
+        }
+      }
+
+      // Half Lord of the Fishes (seated twist)
+      if (((leftKnee.y > leftHip.y && rightKnee.x < leftKnee.x - 40) || (rightKnee.y > rightHip.y && leftKnee.x < rightKnee.x - 40)) &&
+          Math.abs(shoulderCenterY - hipCenterY) < 60) {
+        return { pose: 'Half Lord of the Fishes', confidence: avgConfidence };
+      }
+
+      // Bound Angle Pose
+      if (leftKnee.y < leftHip.y + 40 && rightKnee.y < rightHip.y + 40 && Math.abs(leftAnkle.x - rightAnkle.x) < 60 && Math.abs(leftKnee.x - rightKnee.x) > 80) {
+        return { pose: 'Bound Angle Pose', confidence: avgConfidence };
+      }
+
+      // Easy Pose (cross-legged)
+      if (leftKnee.y > leftHip.y - 20 && rightKnee.y > rightHip.y - 20 && Math.abs(shoulderCenterY - hipCenterY) < 50 && Math.abs(leftKnee.x - rightKnee.x) > 60) {
+        return { pose: 'Easy Pose', confidence: avgConfidence };
+      }
+
+      // Lotus Pose (similar to Easy but more compact)
+      if (leftKnee.y > leftHip.y - 30 && rightKnee.y > rightHip.y - 30 && Math.abs(leftAnkle.x - rightAnkle.x) < 80 && leftAnkle.y < leftKnee.y) {
+        return { pose: 'Lotus Pose', confidence: avgConfidence };
+      }
+
+      // Hero Pose
+      if (leftKnee.y > leftHip.y + 40 && rightKnee.y > rightHip.y + 40 && Math.abs(leftAnkle.x - rightAnkle.x) < 40 && Math.abs(shoulderCenterY - hipCenterY) < 40) {
+        if (shoulderCenterY > hipCenterY + 40) {
+          return { pose: 'Reclined Hero Pose', confidence: avgConfidence };
+        }
+        return { pose: 'Hero Pose', confidence: avgConfidence };
+      }
+
+      // Cow Face Pose
+      if (((leftElbow.y < leftShoulder.y && rightElbow.y > rightShoulder.y) || (rightElbow.y < rightShoulder.y && leftElbow.y > leftShoulder.y)) &&
+          leftKnee.y > leftHip.y && rightKnee.y > rightHip.y) {
+        return { pose: 'Cow Face Pose', confidence: avgConfidence };
+      }
+
+      // STANDING STRETCHES
+      // Shoulder Opener Pose
+      if (leftLegAngle > 150 && rightLegAngle > 150 && wristCenterY > hipCenterY && Math.abs(leftWrist.x - rightWrist.x) < 60) {
+        return { pose: 'Shoulder Opener Pose', confidence: avgConfidence };
+      }
+
+      // Eight-Angle Pose
+      if (leftWrist.y > leftShoulder.y && Math.abs(leftKnee.y - leftElbow.y) < 60 && leftAnkle.x > leftKnee.x + 60) {
+        return { pose: 'Eight-Angle Pose', confidence: avgConfidence };
+      }
+
+      // Scorpion Pose (forearm balance with backbend)
+      if (leftElbow.y > leftShoulder.y + 40 && hipCenterY < shoulderCenterY - 60 && ankleCenterY < shoulderCenterY - 40 && ankleCenterY > hipCenterY - 60) {
+        return { pose: 'Scorpion Pose', confidence: avgConfidence };
+      }
+
+      return { pose: 'Unknown Pose', confidence: avgConfidence };
+    };
 
   // Drawing skeleton
   const drawSkeleton = (keypoints: Keypoint[], detectedPose: string) => {
@@ -315,40 +676,6 @@ const YogaPoseDetector: React.FC = () => {
       }
     }
 
-    if (isPoseDetected) {
-      const angles = extractAngles(keypoints);
-
-      for (const [name, [i1, i2, i3]] of Object.entries(ANGLE_PAIRS)) {
-        const kpA = keypoints[i1];
-        const kpB = keypoints[i2]; // The vertex of the angle
-        const kpC = keypoints[i3];
-
-        if (kpA && kpB && kpC &&
-            (kpA.score ?? 0) > 0.3 &&
-            (kpB.score ?? 0) > 0.3 &&
-            (kpC.score ?? 0) > 0.3) {
-
-          const angle = angles[name];
-
-          // Draw a circle at the joint vertex
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-          ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(kpB.x, kpB.y, 15, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-
-          // Display angle value for major joints
-          if (angle !== undefined && ['leftElbow', 'rightElbow', 'leftKnee', 'rightKnee'].includes(name)) {
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '12px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(`${Math.round(angle)}°`, kpB.x, kpB.y + 25);
-          }
-        }
-      }
-    }
     for (const k of keypoints) {
       if (!k) continue;
       if ((k.score ?? 1) > 0.2) {
@@ -403,20 +730,11 @@ const YogaPoseDetector: React.FC = () => {
             x: (p.x ?? 0) * video.videoWidth,
             y: (p.y ?? 0) * video.videoHeight,
             score: p.visibility ?? 0.5,
-            name: `kp${i}`,
-            index: i
+            name: `kp${i}`
           }));
           lastKeypointsRef.current = keypoints;
 
-          const postAngles = extractAngles(keypoints);
-          const rawPoseReult = classifyPose(keypoints);
-          poseSmootherRef.current.addPoseDetection(rawPoseReult);
-          const smoothedResult = poseSmootherRef.current.getSmoothedPose();
-
-
-          const { pose, confidence: conf } = smoothedResult;
-
-
+          const { pose, confidence: conf } = classifyPose(keypoints);
           setCurrentPose(pose);
           setConfidence(Math.round(conf * 100));
 
@@ -457,9 +775,6 @@ const YogaPoseDetector: React.FC = () => {
 
   // Target pose image (selected by user)
   useEffect(() => {
-    if(poseSmootherRef.current){
-        poseSmootherRef.current.reset();
-    }
     if (!imageDivRef.current) return;
 
     let imageUrl = '/poses/unknown-pose.jpg';
@@ -527,7 +842,7 @@ const YogaPoseDetector: React.FC = () => {
             Yoga Pose Trainer
           </h1>
           <p className="text-xs sm:text-sm md:text-base lg:text-lg text-gray-600 px-2">
-            Join <b>Nannu</b> and pick a pose below to match!
+            Join <b>Nannu</b> and pick a pose below to match – MediaPipe powers live tracking!
           </p>
         </div>
 
@@ -694,7 +1009,7 @@ const YogaPoseDetector: React.FC = () => {
                 <div className="max-h-48 sm:max-h-64 md:max-h-96 overflow-y-auto">
                   <ul className="grid grid-cols-3 gap-1.5 sm:gap-2">
                     {posesData.map((p, idx) => (
-                      <li key={`${p.name}-${idx}`} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
+                      <li key={p.name} className="cursor-pointer" onClick={() => setSelectedPoseIndex(idx)}>
                         <div className={`p-0.5 sm:p-1 rounded-md border-2 ${selectedPoseIndex === idx ? 'border-purple-500' : 'border-transparent'} hover:shadow-lg transition-all`}>
                           <div className="w-full h-16 sm:h-20 bg-pink-50 rounded-md flex items-center justify-center overflow-hidden">
                             <img src={p.image} alt={p.name} className="w-full h-full object-contain" />
