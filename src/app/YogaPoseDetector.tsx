@@ -1,7 +1,9 @@
+'use client';
+
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { Keypoint, PoseDataItem } from './types/yoga.types';
-import { POSES_JSON_PATH } from './constants/yoga.constants';
+import { POSES_JSON_PATH, CONFIDENCE_PRESETS, ConfidenceLevel } from './constants/yoga.constants';
 import { loadPoseModel, loadPosesData } from './utils/dataLoader';
 import { classifyPose } from './utils/poseClassifier';
 import { drawSkeleton } from './utils/skeletonDrawer';
@@ -23,6 +25,7 @@ const YogaPoseDetector: React.FC = () => {
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [zoom, setZoom] = useState(1);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [confidenceLevel, setConfidenceLevel] = useState<ConfidenceLevel>('medium');
   const [currentPose, setCurrentPose] = useState('Unknown');
   const [confidence, setConfidence] = useState(0);
   const [poseCount, setPoseCount] = useState(0);
@@ -127,6 +130,10 @@ const YogaPoseDetector: React.FC = () => {
     if (isCameraOn) await applyZoomToCamera(newZoom);
   };
 
+  const handleConfidenceLevelChange = (level: ConfidenceLevel) => {
+    setConfidenceLevel(level);
+  };
+
   // Detection loop
   useEffect(() => {
     if (!isCameraOn || !landmarkerRef.current || !videoRef.current) return;
@@ -165,7 +172,12 @@ const YogaPoseDetector: React.FC = () => {
           setCurrentPose(pose);
           setConfidence(Math.round(conf * 100));
 
-          const isPoseDetected = pose !== 'Unknown Pose' && pose !== 'Unknown' && pose !== 'No pose detected' && conf >= 0.6;
+          // Use the selected confidence threshold
+          const minConfidence = CONFIDENCE_PRESETS[confidenceLevel].value;
+          const isPoseDetected = pose !== 'Unknown Pose' &&
+                                pose !== 'Unknown' &&
+                                pose !== 'No pose detected' &&
+                                conf >= minConfidence;
 
           if (isPoseDetected && pose !== lastDetectedPose) {
             setLastDetectedPose(pose);
@@ -190,7 +202,7 @@ const YogaPoseDetector: React.FC = () => {
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [isCameraOn, isModelLoaded, currentPose, confidence, soundEnabled, lastDetectedPose]);
+  }, [isCameraOn, isModelLoaded, currentPose, confidence, soundEnabled, lastDetectedPose, confidenceLevel]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-3 md:p-8">
@@ -250,11 +262,13 @@ const YogaPoseDetector: React.FC = () => {
                 isCameraLoading={isCameraLoading}
                 soundEnabled={soundEnabled}
                 zoom={zoom}
+                confidenceLevel={confidenceLevel}
                 onStartCamera={startCamera}
                 onStopCamera={stopCamera}
                 onSwitchCamera={switchCamera}
                 onToggleSound={() => setSoundEnabled(!soundEnabled)}
                 onZoom={handleZoom}
+                onConfidenceLevelChange={handleConfidenceLevelChange}
               />
             </div>
           </div>
@@ -271,7 +285,7 @@ const YogaPoseDetector: React.FC = () => {
 
         <div className="mt-3 sm:mt-4 md:mt-8 text-center text-gray-600">
           <p className="text-xs md:text-sm">
-            Built with MediaPipe Pose Landmarker • Real-time tracking •🎈
+            Built with MediaPipe Pose Landmarker • Real-time tracking 🎈
           </p>
         </div>
       </div>

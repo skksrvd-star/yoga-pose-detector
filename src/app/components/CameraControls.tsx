@@ -1,6 +1,7 @@
 // components/CameraControls.tsx
 import React from 'react';
 import { Camera, SwitchCamera, ZoomIn, ZoomOut } from 'lucide-react';
+import { CONFIDENCE_PRESETS, ConfidenceLevel } from '../constants/yoga.constants';
 
 interface CameraControlsProps {
   isModelLoaded: boolean;
@@ -8,11 +9,13 @@ interface CameraControlsProps {
   isCameraLoading: boolean;
   soundEnabled: boolean;
   zoom: number;
+  confidenceLevel: ConfidenceLevel;
   onStartCamera: () => void;
   onStopCamera: () => void;
   onSwitchCamera: () => void;
   onToggleSound: () => void;
   onZoom: (direction: 'in' | 'out' | 'reset') => void;
+  onConfidenceLevelChange: (level: ConfidenceLevel) => void;
 }
 
 const CameraControls: React.FC<CameraControlsProps> = ({
@@ -21,11 +24,13 @@ const CameraControls: React.FC<CameraControlsProps> = ({
   isCameraLoading,
   soundEnabled,
   zoom,
+  confidenceLevel,
   onStartCamera,
   onStopCamera,
   onSwitchCamera,
   onToggleSound,
-  onZoom
+  onZoom,
+  onConfidenceLevelChange
 }) => {
   return (
     <div className="mt-3 md:mt-4 space-y-2">
@@ -65,6 +70,8 @@ const CameraControls: React.FC<CameraControlsProps> = ({
           Stop Camera
         </button>
       </div>
+
+      {/* Zoom Controls */}
       <div className="flex gap-2 justify-center items-center">
         <button
           onClick={() => onZoom('out')}
@@ -89,6 +96,40 @@ const CameraControls: React.FC<CameraControlsProps> = ({
           <ZoomIn size={16} />
           Zoom In
         </button>
+      </div>
+
+      {/* Confidence Level Controls */}
+      <div className="bg-gray-50 rounded-lg p-3 md:p-4">
+        <div className="text-center mb-2">
+          <h3 className="text-sm md:text-base font-semibold text-gray-700">
+            Confidence Threshold: {CONFIDENCE_PRESETS[confidenceLevel].label} ({Math.round(CONFIDENCE_PRESETS[confidenceLevel].value * 100)}%)
+          </h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Higher = Stricter pose matching
+          </p>
+        </div>
+        <div className="flex gap-2 justify-center">
+          {(Object.keys(CONFIDENCE_PRESETS) as ConfidenceLevel[]).map((level) => {
+            const preset = CONFIDENCE_PRESETS[level];
+            const isActive = confidenceLevel === level;
+            return (
+              <button
+                key={level}
+                onClick={() => onConfidenceLevelChange(level)}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all text-sm md:text-base ${
+                  isActive
+                    ? `${preset.color} text-white shadow-lg scale-105`
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {preset.label}
+                <div className="text-xs mt-0.5 opacity-90">
+                  {Math.round(preset.value * 100)}%
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

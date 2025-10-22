@@ -17,6 +17,15 @@ export const ZOOM_LIMITS = {
   step: 0.1
 };
 
+// Confidence level presets
+export const CONFIDENCE_PRESETS = {
+  low: { label: 'Low', value: 0.75, color: 'bg-green-500' },
+  medium: { label: 'Medium', value: 0.85, color: 'bg-yellow-500' },
+  high: { label: 'High', value: 0.95, color: 'bg-red-500' }
+} as const;
+
+export type ConfidenceLevel = keyof typeof CONFIDENCE_PRESETS;
+
 // Pose detection thresholds
 export const DETECTION_THRESHOLDS = {
   minCriticalVisible: 3,
