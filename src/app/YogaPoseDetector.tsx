@@ -132,7 +132,10 @@ const YogaPoseDetector: React.FC = () => {
 
   const handleConfidenceLevelChange = (level: ConfidenceLevel) => {
     setConfidenceLevel(level);
+    setPoseCount(0); // 🔄 Reset pose counter when level changes
+    setLastDetectedPose(''); // Optional: reset last pose to avoid carryover
   };
+
 
   // Detection loop
   useEffect(() => {
