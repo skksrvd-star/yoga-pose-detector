@@ -59,7 +59,7 @@ export const siteMetadata: Metadata = {
     description: 'Practice yoga with real-time AI feedback. 60+ poses supported. Free, private, and works in your browser.',
     images: [
       {
-        url: '/public/poses/lotus-pose.jpg',
+        url: '/poses/lotus-pose.jpg',
         width: 1200,
         height: 630,
         alt: 'Yoga Pose Trainer - AI Yoga Practice',
@@ -70,7 +70,7 @@ export const siteMetadata: Metadata = {
     card: 'summary_large_image',
     title: 'Yoga Pose Trainer - AI-Powered Yoga Practice',
     description: 'Practice yoga with real-time AI feedback. 60+ poses, instant detection, free to use.',
-    images: ['/public/poses/lotus-pose.jpg'],
+    images: ['/poses/lotus-pose.jpg'],
     creator: '@RD', // UPDATE THIS
   },
   icons: {
@@ -112,8 +112,8 @@ export const jsonLdData = {
     'Privacy-focused (no data upload)',
     'Free to use',
   ],
-  screenshot: 'https://yogaposedetector.netlify.app/poses/screenshot.jpg', // UPDATE THIS
-  image: 'https://yogaposedetector.netlify.app/public/poses/lotus-pose.jpg', // UPDATE THIS
+  screenshot: 'https://yogaposedetector.netlify.app/screenshot.jpg', // UPDATE THIS
+  image: 'https://yogaposedetector.netlify.app/poses/lotus-pose.jpg', // UPDATE THIS
 };
 
 

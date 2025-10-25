@@ -84,7 +84,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
                 : 'text-gray-600 hover:text-purple-600'
             }`}
           >
-            🧘 All Poses ({posesData.length})
+            🧘 All Poses ({posesData.length-1})
           </button>
         </div>
 
