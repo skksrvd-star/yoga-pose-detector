@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Camera, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Camera, AlertCircle, CheckCircle2, Loader2, HelpCircle } from 'lucide-react';
 import { Keypoint, PoseDataItem } from './types/yoga.types';
 import { POSES_JSON_PATH, CONFIDENCE_PRESETS, ConfidenceLevel } from './constants/yoga.constants';
 import { loadPoseModel, loadPosesData } from './utils/dataLoader';
@@ -10,6 +10,7 @@ import { drawSkeleton } from './utils/skeletonDrawer';
 import { playSuccessSound } from './utils/soundUtils';
 import CameraControls from './components/CameraControls';
 import PosePanel from './components/PosePanel';
+import HelpModal from './components/HelpModal';
 
 const YogaPoseDetector: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -32,6 +33,7 @@ const YogaPoseDetector: React.FC = () => {
   const [lastDetectedPose, setLastDetectedPose] = useState('');
   const [posesData, setPosesData] = useState<PoseDataItem[]>([]);
   const [selectedPoseIndex, setSelectedPoseIndex] = useState<number | null>(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Load model
   useEffect(() => {
@@ -132,10 +134,9 @@ const YogaPoseDetector: React.FC = () => {
 
   const handleConfidenceLevelChange = (level: ConfidenceLevel) => {
     setConfidenceLevel(level);
-    setPoseCount(0); // 🔄 Reset pose counter when level changes
-    setLastDetectedPose(''); // Optional: reset last pose to avoid carryover
+    setPoseCount(0);
+    setLastDetectedPose('');
   };
-
 
   // Detection loop
   useEffect(() => {
@@ -175,7 +176,6 @@ const YogaPoseDetector: React.FC = () => {
           setCurrentPose(pose);
           setConfidence(Math.round(conf * 100));
 
-          // Use the selected confidence threshold
           const minConfidence = CONFIDENCE_PRESETS[confidenceLevel].value;
           const isPoseDetected = pose !== 'Unknown Pose' &&
                                 pose !== 'Unknown' &&
@@ -210,13 +210,25 @@ const YogaPoseDetector: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-3 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-3 sm:mb-4 md:mb-8">
+        {/* Header with Help Button */}
+        <div className="text-center mb-3 sm:mb-4 md:mb-8 relative">
           <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-1 md:mb-2">
             Yoga Pose Trainer
           </h1>
           <p className="text-xs sm:text-sm md:text-base lg:text-lg text-gray-600 px-2">
             Join <b>Nannu</b> and pick a pose below to match – MediaPipe powers live tracking!
           </p>
+
+          {/* Help Button */}
+          <button
+            onClick={() => setIsHelpOpen(true)}
+            className="absolute top-0 right-0 md:right-4 bg-purple-600 hover:bg-purple-700 text-white rounded-full p-2 sm:p-3 shadow-lg transition-all hover:scale-110 flex items-center gap-2 group"
+            title="Help & Guide"
+            aria-label="Open help guide"
+          >
+            <HelpCircle size={20} className="sm:w-6 sm:h-6" />
+            <span className="hidden md:inline text-sm font-semibold">Help</span>
+          </button>
         </div>
 
         {isLoading && (
@@ -291,6 +303,13 @@ const YogaPoseDetector: React.FC = () => {
             Built with MediaPipe Pose Landmarker • Real-time tracking 🎈
           </p>
         </div>
+
+        {/* Help Modal */}
+        <HelpModal
+          isOpen={isHelpOpen}
+          onClose={() => setIsHelpOpen(false)}
+          posesData={posesData}
+        />
       </div>
     </div>
   );
