@@ -27,7 +27,6 @@ export default function RootLayout({
     siteMetadata?.description ??
     'AI-powered real-time yoga pose detection and training application.';
 
-  // Ensure keywords is always a string
   const keywords =
     Array.isArray(siteMetadata?.keywords)
       ? siteMetadata.keywords.join(', ')
@@ -35,12 +34,9 @@ export default function RootLayout({
       ? siteMetadata.keywords
       : 'yoga, AI yoga, pose detection, fitness';
 
-  // Explicitly type OG and Twitter as any to bypass TS strictness
   const og: any = siteMetadata?.openGraph ?? {};
   const twitter: any = siteMetadata?.twitter ?? {};
 
-  // Canonical can be string | URL | AlternateLinkDescriptor
-  // Ensure it's a string
   const canonical =
     typeof siteMetadata?.alternates?.canonical === 'string'
       ? siteMetadata.alternates.canonical
@@ -112,6 +108,13 @@ export default function RootLayout({
           content="black-translucent"
         />
         <meta name="apple-mobile-web-app-title" content="Yoga Trainer" />
+
+        {/* Google AdSense */}
+        <script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9371236961473989"
+          crossOrigin="anonymous"
+        ></script>
       </head>
       <body className="font-sans antialiased bg-gray-50 text-gray-900">
         {children}
