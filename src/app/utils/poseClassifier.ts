@@ -23,6 +23,17 @@ export const classifyPose = (kps: Keypoint[]): PoseClassification => {
   const leftAnkle = kp(27);
   const rightAnkle = kp(28);
 
+  // CRITICAL: Check if full body is actually visible
+  // Require BOTH hips AND at least 3 out of 4 leg points with HIGH confidence
+  const hipScore = Math.min(leftHip.score ?? 0, rightHip.score ?? 0);
+  const legKeypoints = [leftKnee, rightKnee, leftAnkle, rightAnkle];
+  const visibleLegKeypoints = legKeypoints.filter(k => (k.score ?? 0) > 0.5).length;
+
+  // If we don't have both hips clearly visible OR less than 3 leg keypoints, abort
+  if (hipScore < 0.4 || visibleLegKeypoints < 3) {
+    return { pose: 'Unknown', confidence: 0 };
+  }
+
   // Validate critical body parts
   const criticalBodyParts = [leftShoulder, rightShoulder, leftHip, rightHip];
   const limbParts = [leftElbow, rightElbow, leftWrist, rightWrist, leftKnee, rightKnee, leftAnkle, rightAnkle];
