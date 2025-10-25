@@ -89,9 +89,9 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto">
           {activeTab === 'guide' ? (
-            <div className="space-y-8">
+            <div className="p-6 space-y-8">
               {/* Quick Start */}
               <section>
                 <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -237,9 +237,9 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
               </section>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div>
               {/* Search and Filter */}
-              <div className="sticky top-0 bg-white pb-4 border-b border-gray-200 space-y-4">
+              <div className="sticky top-0 bg-white pb-4 border-b border-gray-200 space-y-4 z-10 p-6">
                 <input
                   type="text"
                   placeholder="Search poses..."
@@ -270,7 +270,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
               </div>
 
               {/* Poses Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-6">
                 {filteredPoses.map((pose, idx) => (
                   <div key={idx} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
                     <div className="aspect-square bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-4">
@@ -289,7 +289,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
               </div>
 
               {filteredPoses.length === 0 && (
-                <div className="text-center py-12">
+                <div className="text-center py-12 px-6">
                   <p className="text-gray-500 text-lg">No poses found matching your search.</p>
                   <button
                     onClick={() => {
