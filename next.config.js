@@ -1,20 +1,20 @@
 /** @type {import('next').NextConfig} */
-const withPWA = require('next-pwa')({
-  dest: 'public',       // where the service worker will be generated
-  register: true,       // automatically register the service worker
-  skipWaiting: true,    // activate new SW immediately
-  disable: process.env.NODE_ENV === 'development', // disable PWA in dev
-})
+let withPWA = (config) => config;
 
-const nextConfig = withPWA({
+try {
+  const nextPWA = require('next-pwa')({
+    dest: 'public',
+    register: true,
+    skipWaiting: true,
+  });
+  withPWA = nextPWA;
+} catch (e) {
+  console.warn('next-pwa not installed, skipping PWA setup');
+}
+
+module.exports = withPWA({
   reactStrictMode: true,
   images: {
-    unoptimized: true,  // keeps your current behavior for images
+    unoptimized: true,
   },
-  // Optional: if you want to use experimental features
-  // experimental: {
-  //   appDir: true,
-  // },
-})
-
-module.exports = nextConfig;
+});
