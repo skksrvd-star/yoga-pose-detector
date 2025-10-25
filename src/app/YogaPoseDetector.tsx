@@ -2,7 +2,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Keypoint, PoseDataItem } from './types/yoga.types';
 import { POSES_JSON_PATH, CONFIDENCE_PRESETS, ConfidenceLevel } from './constants/yoga.constants';
 import { loadPoseModel, loadPosesData } from './utils/dataLoader';
@@ -33,7 +32,6 @@ const YogaPoseDetector: React.FC = () => {
   const [lastDetectedPose, setLastDetectedPose] = useState('');
   const [posesData, setPosesData] = useState<PoseDataItem[]>([]);
   const [selectedPoseIndex, setSelectedPoseIndex] = useState<number | null>(null);
-  const [matchedPose, setMatchedPose] = useState<PoseDataItem | null>(null);
 
   // Load model
   useEffect(() => {
@@ -46,15 +44,6 @@ const YogaPoseDetector: React.FC = () => {
   useEffect(() => {
     loadPosesData(POSES_JSON_PATH, setPosesData, setError);
   }, []);
-
-  // Reset pose count when confidence level changes
-  const handleConfidenceLevelChange = (level: ConfidenceLevel) => {
-    setConfidenceLevel(level);
-    setPoseCount(0); // reset count
-    setLastDetectedPose('');
-    setMatchedPose(null);
-    setCurrentPose('Unknown');
-  };
 
   // Camera control functions
   const startCamera = async (requestedFacingMode?: 'user' | 'environment') => {
@@ -141,6 +130,13 @@ const YogaPoseDetector: React.FC = () => {
     if (isCameraOn) await applyZoomToCamera(newZoom);
   };
 
+  const handleConfidenceLevelChange = (level: ConfidenceLevel) => {
+    setConfidenceLevel(level);
+    setPoseCount(0); // 🔄 Reset pose counter when level changes
+    setLastDetectedPose(''); // Optional: reset last pose to avoid carryover
+  };
+
+
   // Detection loop
   useEffect(() => {
     if (!isCameraOn || !landmarkerRef.current || !videoRef.current) return;
@@ -179,26 +175,13 @@ const YogaPoseDetector: React.FC = () => {
           setCurrentPose(pose);
           setConfidence(Math.round(conf * 100));
 
-          // --- MATCH WITH JSON POSES ---
-          const foundPose = posesData.find(p => p.name === pose) || null;
-          setMatchedPose(foundPose);
-
-          if (foundPose) {
-            const index = posesData.indexOf(foundPose);
-            if (index !== selectedPoseIndex) setSelectedPoseIndex(index);
-          } else {
-            setSelectedPoseIndex(null);
-          }
-
-          // --- CONFIDENCE CHECK ---
+          // Use the selected confidence threshold
           const minConfidence = CONFIDENCE_PRESETS[confidenceLevel].value;
-          const isPoseDetected =
-            pose !== 'Unknown Pose' &&
-            pose !== 'Unknown' &&
-            pose !== 'No pose detected' &&
-            conf >= minConfidence;
+          const isPoseDetected = pose !== 'Unknown Pose' &&
+                                pose !== 'Unknown' &&
+                                pose !== 'No pose detected' &&
+                                conf >= minConfidence;
 
-          // --- COUNT DETECTIONS ---
           if (isPoseDetected && pose !== lastDetectedPose) {
             setLastDetectedPose(pose);
             setPoseCount(prev => prev + 1);
@@ -209,7 +192,6 @@ const YogaPoseDetector: React.FC = () => {
         } else {
           setCurrentPose('No pose detected');
           setConfidence(0);
-          setMatchedPose(null);
           lastKeypointsRef.current = [];
           setLastDetectedPose('');
         }
@@ -223,59 +205,46 @@ const YogaPoseDetector: React.FC = () => {
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [
-    isCameraOn,
-    isModelLoaded,
-    posesData,
-    confidenceLevel,
-    selectedPoseIndex,
-    currentPose,
-    confidence,
-    soundEnabled,
-    lastDetectedPose
-  ]);
+  }, [isCameraOn, isModelLoaded, currentPose, confidence, soundEnabled, lastDetectedPose, confidenceLevel]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-green-50 p-2 sm:p-3 md:p-8">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-3 sm:mb-4 md:mb-8">
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-2">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-gray-800 mb-1 md:mb-2">
             Yoga Pose Trainer
           </h1>
-          <p className="text-sm md:text-base text-gray-600">
-            Join <b>Nannu</b> and match the pose — MediaPipe powers live tracking!
+          <p className="text-xs sm:text-sm md:text-base lg:text-lg text-gray-600 px-2">
+            Join <b>Nannu</b> and pick a pose below to match – MediaPipe powers live tracking!
           </p>
         </div>
 
-        {/* Status Messages */}
         {isLoading && (
-          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-3 py-2 rounded-lg mb-3 flex items-center justify-center">
+          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-2 py-2 sm:px-3 sm:py-2 md:px-4 md:py-3 rounded-lg mb-2 sm:mb-3 md:mb-4 flex items-center justify-center">
             <Loader2 className="animate-spin mr-2 flex-shrink-0" size={16} />
-            <span>Loading model...</span>
-          </div>
-        )}
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded-lg mb-3 flex items-center">
-            <AlertCircle className="mr-2 flex-shrink-0" size={16} />
-            <span>{error}</span>
-          </div>
-        )}
-        {isModelLoaded && !isCameraOn && !error && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-3 py-2 rounded-lg mb-3 flex items-center justify-center">
-            <CheckCircle2 className="mr-2 flex-shrink-0" size={16} />
-            <span>Model ready – Nannu is waiting! Start Camera 🎉</span>
+            <span className="text-xs sm:text-sm md:text-base">Loading model...</span>
           </div>
         )}
 
-        {/* Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-2 py-2 sm:px-3 sm:py-2 md:px-4 md:py-3 rounded-lg mb-2 sm:mb-3 md:mb-4 flex items-center">
+            <AlertCircle className="mr-2 flex-shrink-0" size={16} />
+            <span className="text-xs sm:text-sm md:text-base">{error}</span>
+          </div>
+        )}
+
+        {isModelLoaded && !isCameraOn && !error && (
+          <div className="bg-green-100 border border-green-400 text-green-700 px-2 py-2 sm:px-3 sm:py-2 md:px-4 md:py-3 rounded-lg mb-2 sm:mb-3 md:mb-4 flex items-center justify-center">
+            <CheckCircle2 className="mr-2 flex-shrink-0" size={16} />
+            <span className="text-xs sm:text-sm md:text-base">Model ready – Nannu is waiting! Start Camera! 🎉</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-xl p-3 md:p-6">
-              <div className="relative bg-gray-900 rounded-xl overflow-hidden" style={{ aspectRatio: '4/3' }}>
-                <div
-                  className="absolute inset-0 flex items-center justify-center"
-                  style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 0.2s ease-out' }}
-                >
+            <div className="bg-white rounded-lg sm:rounded-xl md:rounded-2xl shadow-xl p-2 sm:p-3 md:p-6">
+              <div className="relative bg-gray-900 rounded-md sm:rounded-lg md:rounded-xl overflow-hidden" style={{ aspectRatio: '4/3' }}>
+                <div className="absolute inset-0 flex items-center justify-center" style={{ transform: `scale(${zoom})`, transformOrigin: 'center center', transition: 'transform 0.2s ease-out' }}>
                   <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
                   <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
                 </div>
@@ -290,33 +259,6 @@ const YogaPoseDetector: React.FC = () => {
                 )}
               </div>
 
-              {/* --- Animated Pose Info Section --- */}
-              <AnimatePresence>
-                {matchedPose && (
-                  <motion.div
-                    key={matchedPose.name}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 20 }}
-                    transition={{ duration: 0.4 }}
-                    className="mt-4 flex flex-col sm:flex-row items-center sm:items-start gap-4"
-                  >
-                    <img
-                      src={matchedPose.image}
-                      alt={matchedPose.name}
-                      className="w-32 h-32 sm:w-40 sm:h-40 object-cover rounded-xl shadow-md border border-gray-200"
-                    />
-                    <div className="text-center sm:text-left">
-                      <h3 className="text-lg sm:text-xl font-semibold text-gray-800">{matchedPose.name}</h3>
-                      <p className="text-sm sm:text-base text-gray-600 mt-1">{matchedPose.description}</p>
-                      <p className="mt-2 text-sm text-blue-600 font-medium">Confidence: {confidence}%</p>
-                      <p className="mt-1 text-sm text-green-600 font-semibold">Pose Count: {poseCount}</p>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Camera Controls */}
               <CameraControls
                 isModelLoaded={isModelLoaded}
                 isCameraOn={isCameraOn}
@@ -344,8 +286,10 @@ const YogaPoseDetector: React.FC = () => {
           />
         </div>
 
-        <div className="mt-6 text-center text-gray-600 text-sm">
-          Built with MediaPipe Pose Landmarker • Real-time Yoga Tracking 🧘‍♂️
+        <div className="mt-3 sm:mt-4 md:mt-8 text-center text-gray-600">
+          <p className="text-xs md:text-sm">
+            Built with MediaPipe Pose Landmarker • Real-time tracking 🎈
+          </p>
         </div>
       </div>
     </div>
