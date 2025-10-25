@@ -26,17 +26,21 @@ export default function RootLayout({
   const description =
     siteMetadata?.description ??
     'AI-powered real-time yoga pose detection and training application.';
+
+  // Ensure keywords is always a string
   const keywords =
     Array.isArray(siteMetadata?.keywords)
       ? siteMetadata.keywords.join(', ')
-      : siteMetadata?.keywords ?? 'yoga, AI yoga, pose detection, fitness';
+      : typeof siteMetadata?.keywords === 'string'
+      ? siteMetadata.keywords
+      : 'yoga, AI yoga, pose detection, fitness';
 
-  // Explicitly type these as "any" to avoid Next.js metadata strictness
+  // Explicitly type OG and Twitter as any to bypass TS strictness
   const og: any = siteMetadata?.openGraph ?? {};
   const twitter: any = siteMetadata?.twitter ?? {};
 
   // Canonical can be string | URL | AlternateLinkDescriptor
-  // We ensure it's a string
+  // Ensure it's a string
   const canonical =
     typeof siteMetadata?.alternates?.canonical === 'string'
       ? siteMetadata.alternates.canonical
@@ -55,34 +59,25 @@ export default function RootLayout({
         <meta name="keywords" content={keywords} />
 
         {/* Open Graph Meta Tags */}
-        <meta property="og:type" content={og.type ?? 'website'} />
-        <meta property="og:url" content={og.url ?? canonical} />
-        <meta property="og:title" content={og.title ?? title} />
-        <meta
-          property="og:description"
-          content={og.description ?? description}
-        />
+        <meta property="og:type" content={og?.type ?? 'website'} />
+        <meta property="og:url" content={og?.url ?? canonical} />
+        <meta property="og:title" content={og?.title ?? title} />
+        <meta property="og:description" content={og?.description ?? description} />
         <meta
           property="og:image"
-          content={og.images?.[0]?.url ?? '/poses/lotus-pose.jpg'}
+          content={og?.images?.[0]?.url ?? '/poses/lotus-pose.jpg'}
         />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta
-          property="og:site_name"
-          content={og.siteName ?? 'Yoga Pose Trainer'}
-        />
+        <meta property="og:site_name" content={og?.siteName ?? 'Yoga Pose Trainer'} />
 
         {/* Twitter Card Meta Tags */}
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={twitter.title ?? title} />
-        <meta
-          name="twitter:description"
-          content={twitter.description ?? description}
-        />
+        <meta name="twitter:title" content={twitter?.title ?? title} />
+        <meta name="twitter:description" content={twitter?.description ?? description} />
         <meta
           name="twitter:image"
-          content={twitter.images?.[0] ?? '/poses/lotus-pose.jpg'}
+          content={twitter?.images?.[0] ?? '/poses/lotus-pose.jpg'}
         />
 
         {/* Canonical URL */}
@@ -99,9 +94,7 @@ export default function RootLayout({
         {/* JSON-LD Structured Data */}
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(jsonLdData),
-          }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdData) }}
         />
 
         {/* Additional Meta Tags */}
