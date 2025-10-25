@@ -32,8 +32,9 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
   ];
 
   const filteredPoses = posesData.filter(pose => {
-    const matchesSearch = pose.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         pose.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch =
+      pose.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      pose.description.toLowerCase().includes(searchTerm.toLowerCase());
 
     if (selectedCategory === 'all') return matchesSearch;
 
@@ -41,7 +42,8 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
     if (!category || !category.keywords) return matchesSearch;
 
     const matchesCategory = category.keywords.some(keyword =>
-      pose.name.toLowerCase().includes(keyword.toLowerCase())
+      pose.name.toLowerCase().includes(keyword.toLowerCase()) ||
+      pose.description.toLowerCase().includes(keyword.toLowerCase())
     );
 
     return matchesSearch && matchesCategory;
@@ -84,7 +86,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
                 : 'text-gray-600 hover:text-purple-600'
             }`}
           >
-            🧘 All Poses ({posesData.length-1})
+            🧘 All Poses ({posesData.length})
           </button>
         </div>
 
@@ -99,6 +101,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
                   Quick Start Guide
                 </h3>
                 <div className="grid md:grid-cols-2 gap-4">
+                  {/* Step 1 */}
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
                       <div className="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">1</div>
@@ -109,6 +112,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
                     </div>
                   </div>
 
+                  {/* Step 2 */}
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
                       <div className="bg-blue-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">2</div>
@@ -119,6 +123,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
                     </div>
                   </div>
 
+                  {/* Step 3 */}
                   <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
                       <div className="bg-purple-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">3</div>
@@ -129,6 +134,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
                     </div>
                   </div>
 
+                  {/* Step 4 */}
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
                       <div className="bg-orange-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">4</div>
@@ -186,53 +192,53 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
               <section>
                 <h3 className="text-2xl font-bold text-gray-800 mb-4">💡 Nannu's Tips for Best Results</h3>
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 space-y-3">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
-                    <p className="text-gray-700"><strong>Good Lighting:</strong> Practice in a well-lit area with light coming from the front</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
-                    <p className="text-gray-700"><strong>Full Body Visible:</strong> Keep your entire body in frame from head to toes</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
-                    <p className="text-gray-700"><strong>Plain Background:</strong> Use a simple, uncluttered background for better detection</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
-                    <p className="text-gray-700"><strong>Proper Distance:</strong> Stand 6-8 feet away from the camera</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
-                    <p className="text-gray-700"><strong>Fitted Clothing:</strong> Wear fitted clothes to help with accurate body tracking</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
-                    <p className="text-gray-700"><strong>Start Simple:</strong> Begin with easier poses before attempting advanced inversions</p>
-                  </div>
+                  {[
+                    'Good Lighting: Practice in a well-lit area with light coming from the front',
+                    'Full Body Visible: Keep your entire body in frame from head to toes',
+                    'Plain Background: Use a simple, uncluttered background for better detection',
+                    'Proper Distance: Stand 6-8 feet away from the camera',
+                    'Fitted Clothing: Wear fitted clothes to help with accurate body tracking',
+                    'Start Simple: Begin with easier poses before attempting advanced inversions',
+                  ].map((tip, idx) => (
+                    <div key={idx} className="flex items-start gap-2">
+                      <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" size={20} />
+                      <p className="text-gray-700">{tip}</p>
+                    </div>
+                  ))}
                 </div>
               </section>
 
-              {/* Understanding the Interface */}
+              {/* Interface Guide */}
               <section>
                 <h3 className="text-2xl font-bold text-gray-800 mb-4">📊 Understanding the Interface</h3>
                 <div className="space-y-4">
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-purple-600 mb-2">🎯 Target vs Detected</h4>
-                    <p className="text-sm text-gray-600">The Target image shows your selected pose, while the Detected image shows what the camera currently sees.</p>
-                  </div>
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-green-600 mb-2">📈 Confidence Bar</h4>
-                    <p className="text-sm text-gray-600">The confidence bar shows how accurately you're matching the target pose. Green (70%+) = Great, Yellow (40-70%) = Good, Red (&lt;40%) = Keep trying!</p>
-                  </div>
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-blue-600 mb-2">🦴 Skeleton Overlay</h4>
-                    <p className="text-sm text-gray-600">The skeleton shows detected body keypoints and connections. Purple/pink color indicates a detected pose, gray means no pose detected.</p>
-                  </div>
-                  <div className="border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-orange-600 mb-2">🔢 Pose Counter</h4>
-                    <p className="text-sm text-gray-600">Tracks how many different poses you've successfully held during your session.</p>
-                  </div>
+                  {[
+                    {
+                      title: '🎯 Target vs Detected',
+                      color: 'purple-600',
+                      desc: 'The Target image shows your selected pose, while the Detected image shows what the camera currently sees.',
+                    },
+                    {
+                      title: '📈 Confidence Bar',
+                      color: 'green-600',
+                      desc: 'The confidence bar shows how accurately you are matching the target pose. Green (70%+) = Great, Yellow (40-70%) = Good, Red (<40%) = Keep trying!',
+                    },
+                    {
+                      title: '🦴 Skeleton Overlay',
+                      color: 'blue-600',
+                      desc: 'The skeleton shows detected body keypoints and connections. Purple/pink color indicates a detected pose, gray means no pose detected.',
+                    },
+                    {
+                      title: '🔢 Pose Counter',
+                      color: 'orange-600',
+                      desc: 'Tracks how many different poses you have successfully held during your session.',
+                    },
+                  ].map((item, idx) => (
+                    <div key={idx} className="border border-gray-200 rounded-lg p-4">
+                      <h4 className={`font-semibold text-${item.color} mb-2`}>{item.title}</h4>
+                      <p className="text-sm text-gray-600">{item.desc}</p>
+                    </div>
+                  ))}
                 </div>
               </section>
             </div>
@@ -278,6 +284,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, posesData }) => 
                         src={pose.image}
                         alt={pose.name}
                         className="w-full h-full object-contain"
+                        loading="lazy"
                       />
                     </div>
                     <div className="p-3">
