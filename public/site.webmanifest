@@ -1,0 +1,39 @@
+{
+  "name": "Yoga Pose Trainer",
+  "short_name": "Yoga Trainer",
+  "description": "AI-powered yoga pose detection and training",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#9333ea",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["health", "fitness", "lifestyle"],
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.jpg",
+      "sizes": "540x720",
+      "type": "image/jpeg",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/screenshot-desktop.jpg",
+      "sizes": "1280x720",
+      "type": "image/jpeg",
+      "form_factor": "wide"
+    }
+  ]
+}
