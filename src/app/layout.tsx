@@ -3,20 +3,29 @@
 import './globals.css';
 import { siteMetadata, jsonLdData } from './metadata';
 
+// Utility to safely resolve title whether it's a string or object
+function resolveTitle(titleValue: unknown): string {
+  if (!titleValue) return 'Yoga Pose Trainer';
+  if (typeof titleValue === 'string') return titleValue;
+  if (
+    typeof titleValue === 'object' &&
+    titleValue !== null &&
+    'default' in (titleValue as Record<string, unknown>)
+  ) {
+    return (titleValue as Record<string, any>).default ?? 'Yoga Pose Trainer';
+  }
+  return 'Yoga Pose Trainer';
+}
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // Fallback-safe access
-  const title = siteMetadata?.title && typeof siteMetadata.title === 'object'
-    ? siteMetadata.title.default ?? 'Yoga Pose Trainer'
-    : (siteMetadata?.title as string) ?? 'Yoga Pose Trainer';
-
+  const title = resolveTitle(siteMetadata?.title);
   const description =
     siteMetadata?.description ??
     'AI-powered real-time yoga pose detection and training application.';
-
   const keywords =
     siteMetadata?.keywords?.join(', ') ??
     'yoga, AI yoga, pose detection, fitness';
