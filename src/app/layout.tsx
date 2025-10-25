@@ -27,12 +27,20 @@ export default function RootLayout({
     siteMetadata?.description ??
     'AI-powered real-time yoga pose detection and training application.';
   const keywords =
-    siteMetadata?.keywords?.join(', ') ??
-    'yoga, AI yoga, pose detection, fitness';
+    Array.isArray(siteMetadata?.keywords)
+      ? siteMetadata.keywords.join(', ')
+      : siteMetadata?.keywords ?? 'yoga, AI yoga, pose detection, fitness';
 
-  const og = siteMetadata?.openGraph ?? {};
-  const twitter = siteMetadata?.twitter ?? {};
-  const canonical = siteMetadata?.alternates?.canonical ?? '/';
+  // Explicitly type these as "any" to avoid Next.js metadata strictness
+  const og: any = siteMetadata?.openGraph ?? {};
+  const twitter: any = siteMetadata?.twitter ?? {};
+
+  // Canonical can be string | URL | AlternateLinkDescriptor
+  // We ensure it's a string
+  const canonical =
+    typeof siteMetadata?.alternates?.canonical === 'string'
+      ? siteMetadata.alternates.canonical
+      : siteMetadata?.alternates?.canonical?.toString?.() ?? '/';
 
   return (
     <html lang="en">
@@ -50,19 +58,28 @@ export default function RootLayout({
         <meta property="og:type" content={og.type ?? 'website'} />
         <meta property="og:url" content={og.url ?? canonical} />
         <meta property="og:title" content={og.title ?? title} />
-        <meta property="og:description" content={og.description ?? description} />
+        <meta
+          property="og:description"
+          content={og.description ?? description}
+        />
         <meta
           property="og:image"
           content={og.images?.[0]?.url ?? '/poses/lotus-pose.jpg'}
         />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta property="og:site_name" content={og.siteName ?? 'Yoga Pose Trainer'} />
+        <meta
+          property="og:site_name"
+          content={og.siteName ?? 'Yoga Pose Trainer'}
+        />
 
         {/* Twitter Card Meta Tags */}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={twitter.title ?? title} />
-        <meta name="twitter:description" content={twitter.description ?? description} />
+        <meta
+          name="twitter:description"
+          content={twitter.description ?? description}
+        />
         <meta
           name="twitter:image"
           content={twitter.images?.[0] ?? '/poses/lotus-pose.jpg'}
