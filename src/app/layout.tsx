@@ -8,6 +8,23 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Fallback-safe access
+  const title = siteMetadata?.title && typeof siteMetadata.title === 'object'
+    ? siteMetadata.title.default ?? 'Yoga Pose Trainer'
+    : (siteMetadata?.title as string) ?? 'Yoga Pose Trainer';
+
+  const description =
+    siteMetadata?.description ??
+    'AI-powered real-time yoga pose detection and training application.';
+
+  const keywords =
+    siteMetadata?.keywords?.join(', ') ??
+    'yoga, AI yoga, pose detection, fitness';
+
+  const og = siteMetadata?.openGraph ?? {};
+  const twitter = siteMetadata?.twitter ?? {};
+  const canonical = siteMetadata?.alternates?.canonical ?? '/';
+
   return (
     <html lang="en">
       <head>
@@ -16,34 +33,38 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
         {/* Title and Description */}
-        <title>{siteMetadata.title.default}</title>
-        <meta name="description" content={siteMetadata.description} />
-        <meta name="keywords" content={siteMetadata.keywords?.join(', ')} />
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <meta name="keywords" content={keywords} />
 
         {/* Open Graph Meta Tags */}
-        <meta property="og:type" content="website" />
-        <meta property="og:url" content={siteMetadata.openGraph.url} />
-        <meta property="og:title" content={siteMetadata.openGraph.title} />
-        <meta property="og:description" content={siteMetadata.openGraph.description} />
-        <meta property="og:image" content={siteMetadata.openGraph.images[0].url} />
+        <meta property="og:type" content={og.type ?? 'website'} />
+        <meta property="og:url" content={og.url ?? canonical} />
+        <meta property="og:title" content={og.title ?? title} />
+        <meta property="og:description" content={og.description ?? description} />
+        <meta
+          property="og:image"
+          content={og.images?.[0]?.url ?? '/poses/lotus-pose.jpg'}
+        />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
-        <meta property="og:site_name" content="Yoga Pose Trainer" />
+        <meta property="og:site_name" content={og.siteName ?? 'Yoga Pose Trainer'} />
 
         {/* Twitter Card Meta Tags */}
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={siteMetadata.twitter.title} />
-        <meta name="twitter:description" content={siteMetadata.twitter.description} />
-        <meta name="twitter:image" content={siteMetadata.twitter.images[0]} />
+        <meta name="twitter:title" content={twitter.title ?? title} />
+        <meta name="twitter:description" content={twitter.description ?? description} />
+        <meta
+          name="twitter:image"
+          content={twitter.images?.[0] ?? '/poses/lotus-pose.jpg'}
+        />
 
         {/* Canonical URL */}
-        <link rel="canonical" href={siteMetadata.alternates.canonical} />
+        <link rel="canonical" href={canonical} />
 
-        {/* Favicon */}
+        {/* Favicon and Manifest */}
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-
-        {/* Manifest for PWA */}
         <link rel="manifest" href="/site.webmanifest" />
 
         {/* Theme Color */}
@@ -67,7 +88,10 @@ export default function RootLayout({
         {/* Mobile Optimization */}
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
         <meta name="apple-mobile-web-app-title" content="Yoga Trainer" />
       </head>
       <body className="font-sans antialiased bg-gray-50 text-gray-900">
